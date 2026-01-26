@@ -1,0 +1,122 @@
+:host {
+    width: 100%;
+    height: 100%;
+
+    .login {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        flex-direction: column;
+        height: 100%;
+
+        .credentials {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+
+            input {
+                width: 400px;
+            }
+        }
+
+        .credentials-hint {
+            display: block;
+            margin-top: 16px;
+            line-height: 1.4;
+
+            .redirect-uri {
+                display: flex;
+                align-items: center;
+
+                code {
+                    padding: 0.4rem 0.6rem;
+                    font-size: 0.9rem;
+                    user-select: all;
+                }
+
+                button {
+                    flex-shrink: 0;
+                }
+            }
+        }
+    }
+
+    .main {
+        height: 100%;
+        padding: 24px;
+        display: block;
+        position: relative;
+        grid-template-columns: 1fr 320px;
+        gap: 24px;
+        align-items: start;
+
+        .playlists {
+            h3 {
+                margin: 0 0 12px 0;
+                font-weight: 600;
+            }
+
+            .sync-playlists {
+                margin-bottom: 16px;
+            }
+
+            .playlist-search {
+                margin: 12px 0 16px;
+                max-width: 520px;
+
+                input {
+                    width: 100%;
+                }
+            }
+
+            .directory-selector {
+                display: grid;
+                grid-template-columns: 1fr auto;
+                gap: 12px;
+                align-items: end;
+                margin-bottom: 16px;
+                max-width: 520px;
+
+                input {
+                    width: 100%;
+                }
+            }
+
+            p-progressbar {
+                margin: 10px 0;
+            }
+
+            p-progress-spinner {
+                display: block;
+                margin: 16px auto;
+            }
+
+            .playlists {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 8px;
+                margin-top: 12px;
+
+                p-tag {
+                    cursor: pointer;
+                    user-select: none;
+                    transition: transform 0.08s ease, opacity 0.08s ease;
+                }
+
+                p-tag:hover {
+                    transform: translateY(-1px);
+                    opacity: 0.95;
+                }
+            }
+        }
+
+        .user-details {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+    }
+}

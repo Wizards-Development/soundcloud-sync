@@ -1,0 +1,106 @@
+@if (!isClientCredentialsValid()) {
+<div class="login" [formGroup]="form">
+    <div class="credentials">
+        <p-floatlabel variant="on">
+            <input pInputText id="clientId" formControlName="clientId" autocomplete="off" />
+            <label for="clientId">Client id</label>
+        </p-floatlabel>
+
+        <p-floatlabel variant="on">
+            <input pInputText id="clientSecret" formControlName="clientSecret" autocomplete="off" />
+            <label for="clientSecret">Client secret</label>
+        </p-floatlabel>
+        <button pButton type="button" label="Connect" (click)="login()" [disabled]="form.invalid"></button>
+    </div>
+    <small class="credentials-hint">
+        Vous pouvez obtenir votre <strong>Client ID</strong> et <strong>Client Secret</strong> en vous rendant sur
+        <a [href]="soundcloudAppsUrl" (click)="$event.preventDefault(); openSoundcloudApps()">
+            {{soundcloudAppsUrl}}
+        </a>
+        dans votre navigateur. <br>
+        Si vous n'avez pas d'app enregistrée cliquez sur <strong>Sign up for a new app</strong> comme nom et
+        description mettez synchroniser. <br>
+        Ensuite quand l'app est créée assurez vous que le <strong>Redirect URI</strong> est bien: <div
+            class="redirect-uri">
+            <code>{{ callbackUri }}</code>
+            <p-button icon="pi pi-copy" rounded="true" text="true" severity="secondary"
+                (click)="copyRedirectUri()"></p-button>
+        </div>
+        et que vous avez sauvegarder.
+        <br>
+        Maintenant vous n'avez plus qu'a copier votre <strong>Client ID</strong> et <strong>Client Secret</strong>
+        😉
+    </small>
+</div>
+} @else {
+<div class="main">
+    @if (isAuthenticated()) {
+    <div class="playlists">
+        <h3>Mes playlists</h3>
+        <button class="sync-playlists" pButton label="Synchroniser" (click)="syncPlaylists()"
+            [disabled]="saveDirectory() === ''"></button>
+
+        <div class="directory-selector">
+            <p-floatlabel variant="on">
+                <input pInputText readonly id="playlistSearch" [ngModel]="saveDirectory()" autocomplete="off" />
+                <label for="playlistSearch">Dossier de sauvegarde</label>
+            </p-floatlabel>
+
+            <button pButton label="Select Folder" icon="pi pi-folder" (click)="selectDirctory()"></button>
+        </div>
+
+        <div class="playlist-search">
+            <p-floatlabel variant="on">
+                <input pInputText id="playlistSearch" [ngModel]="playlistQuery()"
+                    (ngModelChange)="playlistQuery.set($event)" autocomplete="off" />
+                <label for="playlistSearch">Rechercher une playlist</label>
+            </p-floatlabel>
+        </div>
+
+        @if (progress$ | async; as synchronise) {
+        @if (synchronise.running) {
+        <p-progressbar
+            [value]="synchronise.playlistsTotal ? (synchronise.playlistsDone / synchronise.playlistsTotal) * 100 : 0">
+            <ng-template #content let-value>
+                <span>{{ synchronise.playlistsDone }}/{{synchronise.playlistsTotal}}
+                    ({{synchronise.currentPlaylistTitle}})</span>
+            </ng-template>
+        </p-progressbar>
+
+        <p-progressbar [value]="synchronise.tracksTotal ? (synchronise.tracksDone / synchronise.tracksTotal) * 100 : 0">
+            <ng-template #content let-value>
+                <span>{{ synchronise.tracksDone }}/{{synchronise.tracksTotal}}
+                    ({{synchronise.currentTrackTitle}})</span>
+            </ng-template>
+        </p-progressbar>
+        }
+        }
+
+        @if (loadingPlaylists()) {
+        <p-progress-spinner ariaLabel="loading" />
+        } @else if (filteredPlaylists() && filteredPlaylists()!.length) {
+        <div class="playlists">
+            @for (playlist of filteredPlaylists()!; track $index) {
+            <p-tag [severity]="isSynced(playlist.id) ? null : 'secondary'" [value]="playlist.title"
+                (click)="togglePlaylistSync(playlist)" />
+            }
+        </div>
+        } @else if (filteredPlaylists() && filteredPlaylists()!.length === 0) {
+        <span>Aucune playlist trouvée</span>
+        }
+    </div>
+    }
+    @if (isAuthenticated() && user(); as user) {
+    <div class="user-details">
+        <span>
+            Coucou {{user.username}} 👋
+        </span>
+        @if (user.avatar_url) {
+        <p-avatar [image]="user.avatar_url" class="mr-2" size="xlarge" shape="circle" />
+        } @else {
+        <p-avatar icon="pi pi-user" class="mr-2" size="xlarge" shape="circle" />
+        }
+    </div>
+    }
+</div>
+}
