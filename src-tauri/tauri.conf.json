@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "identifier": "ch.hortiprod.lucnelmr",
   "build": {
-    "frontendDist": "../dist/soundcloud-sync",
+    "frontendDist": "../dist/soundcloud-sync/browser",
     "devUrl": "http://localhost:4200",
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build"
