@@ -1,10 +1,12 @@
-import { inject, Injectable, signal } from '@angular/core';
+import { inject, Injectable, OnInit, signal } from '@angular/core';
 import { randomString, sha256Base64Url } from './pkce';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { Router } from '@angular/router';
+import { openUrl } from '@tauri-apps/plugin-opener';
+import { getCurrent, onOpenUrl } from '@tauri-apps/plugin-deep-link';
 
 @Injectable({ providedIn: 'root' })
-export class SoundCloudAuthService {
+export class SoundCloudAuthService implements OnInit {
     private readonly SC_CLIENT_ID = 'sc_client_id';
     private readonly SC_CLIENT_SECRET = 'sc_client_secret';
     private readonly SC_STATE = 'sc_state';
@@ -12,9 +14,9 @@ export class SoundCloudAuthService {
     private readonly SC_ACCESS_TOKEN = 'sc_access_token';
     private readonly SC_REFRESH_TOKEN = 'sc_refresh_token';
 
-    private redirectUri = `${window.location.origin}/callback`;
     private baseUrl = "https://secure.soundcloud.com"
 
+    public redirectUri = `soundcloud-sync://auth/callback`;
     public isAuthenticated = signal(false);
     public isClientCredentialsValid = signal(localStorage.getItem("isClientCredentialsValid") ? true : false);
 
@@ -69,6 +71,15 @@ export class SoundCloudAuthService {
         sessionStorage.setItem(this.SC_REFRESH_TOKEN, value);
     }
 
+    async ngOnInit() {
+        const urls = await getCurrent();
+        if (urls?.length) this.handleUrls(urls);
+
+        await onOpenUrl((urls) => {
+            this.handleUrls(urls);
+        });
+    }
+
     async login(): Promise<void> {
         const state = randomString(16);
         const codeVerifier = randomString(64);
@@ -77,7 +88,7 @@ export class SoundCloudAuthService {
         this.state = state;
         this.codeVerifier = codeVerifier;
 
-        window.location.href = `${this.baseUrl}/authorize?client_id=${encodeURIComponent(this.clientId)}&redirect_uri=${encodeURIComponent(this.redirectUri)}&response_type=code&code_challenge=${encodeURIComponent(codeChallenge)}&code_challenge_method=S256&state=${encodeURIComponent(state)}`;
+        await openUrl(`${this.baseUrl}/authorize?client_id=${encodeURIComponent(this.clientId)}&redirect_uri=${encodeURIComponent(this.redirectUri)}&response_type=code&code_challenge=${encodeURIComponent(codeChallenge)}&code_challenge_method=S256&state=${encodeURIComponent(state)}`);
     }
 
     public token(code: string, state: string): void {
@@ -122,5 +133,34 @@ export class SoundCloudAuthService {
                     alert('Erreur token SoundCloud');
                 },
             });
+    }
+
+    private handleUrls(urls: string[]) {
+        for (const url of urls) {
+            this.handleUrl(url);
+        }
+    }
+
+    private handleUrl(url: string) {
+        let parsed: URL;
+        try {
+            parsed = new URL(url);
+        } catch {
+            return;
+        }
+
+        const isSoundcloudCallback =
+            parsed.protocol === 'soundcloud-sync:' &&
+            parsed.hostname === 'auth' &&
+            parsed.pathname === '/callback';
+
+        if (!isSoundcloudCallback) return;
+
+        const code = parsed.searchParams.get('code');
+        const state = parsed.searchParams.get('state');
+
+        if (code && state) {
+            this.token(code, state)
+        }
     }
 }

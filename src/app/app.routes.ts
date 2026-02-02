@@ -7,11 +7,6 @@ export const routes: Routes = [
         title: 'Home'
     },
     {
-        path: 'callback',
-        loadComponent: () => import('../app/components/auth-callback/auth-callback').then(c => c.AuthCallback),
-        title: 'Auth callback'
-    },
-    {
         path: '**',
         redirectTo: 'home'
     }

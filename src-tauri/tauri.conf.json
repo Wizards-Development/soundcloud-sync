@@ -20,7 +20,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; connect-src 'self' https://*.soundcloud.com https://*.sndcdn.com; frame-src https://w.soundcloud.com https://*.soundcloud.com; img-src 'self' https://*.sndcdn.com https://*.soundcloud.com data:; media-src 'self' https://*.sndcdn.com https://*.soundcloud.com; script-src 'self' 'unsafe-inline' https://*.soundcloud.com; style-src 'self' 'unsafe-inline' https://*.soundcloud.com;"
+      "csp": null
     }
   },
   "bundle": {
@@ -33,5 +33,12 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["soundcloud-sync"]
+      }
+    }
   }
 }

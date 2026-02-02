@@ -42,7 +42,7 @@ export class Home {
   public saveDirectory = signal(localStorage.getItem(this.SAVE_DIRECTORY) ?? '')
   public user: Signal<SoundCloudUser | null> = signal(null);
   public readonly soundcloudAppsUrl = 'https://soundcloud.com/you/apps';
-  public readonly callbackUri = 'http://localhost:4200/callback';
+  public readonly callbackUri = this.authService.redirectUri;
   public readonly playlistQuery = signal('');
   public readonly filteredPlaylists = computed(() => {
     const list = this.playlists();
