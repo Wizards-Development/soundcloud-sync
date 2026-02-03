@@ -26,6 +26,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -39,6 +40,12 @@
       "desktop": {
         "schemes": ["soundcloud-sync"]
       }
+    },
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDA2NDJFMUVCNkYwQTc4RUMKUldUc2VBcHY2K0ZDQnBleG9CQ2Vna1hJMC9nUkovTVQ5K1dzL0s5bXJqYmZ4MnJWeGNkSlg4MVUK",
+      "endpoints": [
+        "https://github.com/Wizards-Development/soundcloud-sync/releases/latest/download/latest.json"
+      ]
     }
   }
 }
