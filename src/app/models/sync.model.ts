@@ -1,20 +1,21 @@
+export type SyncStatus = 'idle' | 'running' | 'done' | 'error' | 'canceled';
+
 export interface SyncProgress {
-  running: boolean;
+  status: SyncStatus;
 
-  playlistsDone: number;
-  playlistsTotal: number;
+  total: number;
+  processed: number;
 
-  currentPlaylistTitle?: string;
+  downloaded: number;
+  streamed: number;
+  skipped: number;
+  unsupported: number;
+  errors: number;
 
-  tracksDone: number;
-  tracksTotal: number;
+  startedAt?: number;
+  elapsedMs?: number;
 
-  currentTrackTitle?: string;
-
-  downloadedCount: number;
-  streamedCount: number;
-  skippedExistingCount: number;
-  unsupportedCount: number;
-  errorCount: number;
-  error?: string;
+  rate?: number;
+  etaMs?: number;
+  lastTickAt?: number;
 }

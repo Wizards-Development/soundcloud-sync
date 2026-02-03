@@ -11,7 +11,7 @@ import { SoundCloudService } from '../../services/soundcloud.service';
 import { ProgressSpinnerModule } from 'primeng/progressspinner';
 import { AvatarModule } from 'primeng/avatar';
 import { TagModule } from 'primeng/tag';
-import { SoundCloudPlaylist, SoundCloudUser } from '../../models/soundcloud.model';
+import { SoundCloudPlaylist } from '../../models/soundcloud.model';
 import { SyncService } from '../../services/sync.service';
 import { open } from '@tauri-apps/plugin-dialog';
 import { ProgressBarModule } from 'primeng/progressbar';
@@ -40,7 +40,7 @@ export class Home {
   public playlists = this.soundcloudService.playlists;
   public user = this.soundcloudService.user;
   public loadingPlaylists = computed(() => this.playlists() === null);
-
+  public progress$ = this.syncService.progress$;
   public saveDirectory = signal(localStorage.getItem(this.SAVE_DIRECTORY) ?? '')
   public readonly soundcloudAppsUrl = 'https://soundcloud.com/you/apps';
   public readonly callbackUri = this.authService.redirectUri;
@@ -61,10 +61,6 @@ export class Home {
 
   public get isAuthenticated(): Signal<boolean> {
     return this.authService.isAuthenticated;
-  }
-
-  public get progress$(): Observable<SyncProgress> {
-    return this.syncService.progress$;
   }
 
   public constructor() {
@@ -156,4 +152,27 @@ export class Home {
   public async copyRedirectUri(): Promise<void> {
     this.clipboard.copy(this.callbackUri);
   }
+
+  public formatEta(ms?: number): string {
+    if (!ms && ms !== 0) return '—';
+    const s = Math.max(0, Math.round(ms / 1000));
+    const m = Math.floor(s / 60);
+    const r = s % 60;
+    return m > 0 ? `${m}m ${r}s` : `${r}s`;
+  }
+
+  public formatElapsed(ms?: number): string {
+    if (!ms) return '0s';
+    const s = Math.floor(ms / 1000);
+    const m = Math.floor(s / 60);
+    const r = s % 60;
+    return m > 0 ? `${m}m ${r}s` : `${r}s`;
+  }
+
+  public getProgressPercent(p: SyncProgress): number {
+    if (!p.total) return 0;
+
+    return Math.round((p.processed / p.total) * 100 * 100) / 100;
+  }
+
 }

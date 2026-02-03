@@ -118,5 +118,32 @@
             align-items: center;
             gap: 12px;
         }
+
+        .card {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .sync-line {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            align-items: center;
+            gap: 0.5rem;
+
+            .progress {
+                font-weight: 600;
+                color: var(--text-color);
+            }
+
+            .sep {
+                opacity: 0.4;
+            }
+
+            .error {
+                color: var(--red-500);
+                font-weight: 600;
+            }
+        }
     }
 }

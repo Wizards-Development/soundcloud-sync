@@ -1,13 +1,32 @@
 import { inject, Injectable } from '@angular/core';
-import { BehaviorSubject, from, Observable, of } from 'rxjs';
-import { catchError, finalize, map, mergeMap, switchMap, tap, toArray } from 'rxjs/operators';
+import {
+    BehaviorSubject,
+    EMPTY,
+    from,
+    interval,
+    merge,
+    Observable,
+    of,
+    throwError,
+} from 'rxjs';
+import {
+    catchError,
+    finalize,
+    map,
+    mergeMap,
+    switchMap,
+    tap,
+    toArray,
+    takeWhile,
+    mapTo,
+} from 'rxjs/operators';
 import { invoke } from '@tauri-apps/api/core';
 import { SoundCloudService } from './soundcloud.service';
 import { SoundCloudAuthService } from './soundcloud-auth.service';
-import { SyncProgress } from '../models/sync.model';
 import { SoundCloudTrack } from '../models/soundcloud.model';
+import { SyncProgress, SyncStatus } from '../models/sync.model';
 
-type EnrichedTrack = SoundCloudTrack & { http_mp3_128_url?: string; };
+type EnrichedTrack = SoundCloudTrack & { http_mp3_128_url?: string };
 
 type SyncTrackResponse = {
     action: 'skipped' | 'downloaded' | 'streamed' | 'unsupported' | 'error';
@@ -20,20 +39,39 @@ export class SyncService {
     private soundcloudService = inject(SoundCloudService);
     private authService = inject(SoundCloudAuthService);
 
-    private readonly _progress$ = new BehaviorSubject<SyncProgress>({
-        running: false,
-        playlistsDone: 0,
-        playlistsTotal: 0,
-        tracksDone: 0,
-        tracksTotal: 0,
-        downloadedCount: 0,
-        streamedCount: 0,
-        skippedExistingCount: 0,
-        unsupportedCount: 0,
-        errorCount: 0,
+    private progressSubject = new BehaviorSubject<SyncProgress>({
+        status: 'idle',
+        total: 0,
+        processed: 0,
+        downloaded: 0,
+        streamed: 0,
+        skipped: 0,
+        unsupported: 0,
+        errors: 0,
     });
 
-    public readonly progress$ = this._progress$.asObservable();
+    public progress$ = this.progressSubject.asObservable();
+
+    private update(patch: Partial<SyncProgress>) {
+        this.progressSubject.next({ ...this.progressSubject.value, ...patch });
+    }
+
+    public resetProgress() {
+        this.progressSubject.next({
+            status: 'idle',
+            total: 0,
+            processed: 0,
+            downloaded: 0,
+            streamed: 0,
+            skipped: 0,
+            unsupported: 0,
+            errors: 0,
+        });
+    }
+
+    public cancel() {
+        this.update({ status: 'canceled' });
+    }
 
     public syncPlaylists(
         playlists: Map<string, string>,
@@ -42,70 +80,156 @@ export class SyncService {
         playlistConcurrency = 2
     ): Observable<void> {
         const entries = Array.from(playlists.entries());
-        const playlistsTotal = entries.length;
+        const startedAt = Date.now();
 
-        this._progress$.next({
-            running: true,
-            playlistsDone: 0,
-            playlistsTotal,
-            tracksDone: 0,
-            tracksTotal: 0,
-            downloadedCount: 0,
-            streamedCount: 0,
-            skippedExistingCount: 0,
-            unsupportedCount: 0,
-            errorCount: 0,
-            error: undefined,
-            currentPlaylistTitle: undefined,
-            currentTrackTitle: undefined,
+        this.update({
+            status: 'running',
+            total: 0,
+            processed: 0,
+            downloaded: 0,
+            streamed: 0,
+            skipped: 0,
+            unsupported: 0,
+            errors: 0,
+            startedAt,
+            elapsedMs: 0,
+            rate: 0,
+            etaMs: undefined,
+            lastTickAt: startedAt,
         });
 
-        return from(entries).pipe(
-            mergeMap(([playlistId, playlistTitle], playlistIdx) => {
-                this.patch({
-                    currentPlaylistTitle: playlistTitle,
-                    playlistsDone: playlistIdx + 1,
-                    tracksDone: 0,
-                    tracksTotal: 0,
-                    currentTrackTitle: undefined,
-                    error: undefined,
-                });
+        const tick$ = interval(250).pipe(
+            takeWhile(() => this.progressSubject.value.status === 'running'),
+            tap(() => {
+                const cur = this.progressSubject.value;
+                const now = Date.now();
 
-                return this.soundcloudService.getPlaylistsTracks(playlistId).pipe(
-                    switchMap(tracks => {
-                        const safeTracks = tracks ?? [];
-                        this.patch({ tracksDone: 0, tracksTotal: safeTracks.length });
+                const elapsedMs = now - (cur.startedAt ?? now);
+                const rate = this.computeRate(cur.startedAt ?? now, cur.processed);
+                const remaining = Math.max(0, (cur.total || 0) - cur.processed);
+                const etaMs = rate > 0 ? Math.round((remaining / rate) * 1000) : undefined;
 
-                        return from(safeTracks).pipe(
-                            mergeMap((track) => this.syncOneTrack(track, playlistTitle, directory), tracksConcurrency),
-                            tap(() => {
-                                this.patch({ tracksDone: this._progress$.value.tracksDone + 1 });
-                            }),
-                            finalize(() => {
-                                this.patch({
-                                    playlistsDone: this._progress$.value.playlistsDone + 1,
-                                    currentTrackTitle: undefined,
-                                });
-                            }),
-                            map(() => void 0),
-                        );
-                    }),
-                );
-            }, playlistConcurrency),
-            finalize(() => {
-                this.patch({
-                    running: false,
-                    currentPlaylistTitle: undefined,
-                    currentTrackTitle: undefined,
+                this.update({
+                    elapsedMs,
+                    rate,
+                    etaMs,
+                    lastTickAt: now,
                 });
             }),
-            map(() => void 0),
+            mapTo(void 0)
+        );
+
+        const main$ = from(entries).pipe(
+            mergeMap(([playlistId, playlistTitle]) => {
+                return this.soundcloudService.getPlaylistsTracks(playlistId).pipe(
+                    map(tracks => ({ playlistTitle, tracks: tracks ?? [] })),
+                    catchError(err => {
+                        console.error('getPlaylistsTracks error', playlistId, err);
+                        return of({ playlistTitle, tracks: [] as SoundCloudTrack[] });
+                    })
+                );
+            }, playlistConcurrency),
+            toArray(),
+            switchMap(all => {
+                const flat = all.flatMap(x => x.tracks.map(t => ({ t, playlistTitle: x.playlistTitle })));
+                this.update({ total: flat.length });
+
+                return from(flat).pipe(
+                    mergeMap(
+                        ({ t, playlistTitle }) =>
+                            this.syncOneTrack(t, playlistTitle, directory).pipe(
+                                tap(res => this.onTrackResult(res, startedAt))
+                            ),
+                        tracksConcurrency
+                    ),
+                    map(() => void 0)
+                );
+            }),
+            finalize(() => {
+                const cur = this.progressSubject.value;
+                const status: SyncStatus =
+                    cur.status === 'canceled'
+                        ? 'canceled'
+                        : cur.status === 'error'
+                            ? 'error'
+                            : 'done';
+
+                this.update({
+                    status,
+                    elapsedMs: Date.now() - startedAt,
+                    rate: this.computeRate(startedAt),
+                    etaMs: 0,
+                });
+            }),
+            catchError(err => {
+                console.error('syncPlaylists fatal error', err);
+                this.update({ status: 'error' });
+                return throwError(() => err);
+            })
+        );
+        return merge(tick$, main$).pipe(
+            catchError(err => throwError(() => err))
         );
     }
 
-    private syncOneTrack(track: SoundCloudTrack, playlistTitle: string, directory: string) {
-        this.patch({ currentTrackTitle: track.title });
+    private onTrackResult(res: SyncTrackResponse | null, startedAt: number) {
+        const cur = this.progressSubject.value;
+        const processed = cur.processed + 1;
+        let downloaded = cur.downloaded;
+        let streamed = cur.streamed;
+        let skipped = cur.skipped;
+        let unsupported = cur.unsupported;
+        let errors = cur.errors;
 
+        switch (res?.action) {
+            case 'downloaded':
+                downloaded++;
+                break;
+            case 'streamed':
+                streamed++;
+                break;
+            case 'skipped':
+                skipped++;
+                break;
+            case 'unsupported':
+                unsupported++;
+                break;
+            case 'error':
+                errors++;
+                break;
+            default:
+                errors++;
+                break;
+        }
+
+        const now = Date.now();
+        const elapsedMs = now - startedAt;
+        const rate = this.computeRate(startedAt, processed);
+        const remaining = Math.max(0, (cur.total || 0) - processed);
+        const etaMs = rate > 0 ? Math.round((remaining / rate) * 1000) : undefined;
+
+        this.update({
+            processed,
+            downloaded,
+            streamed,
+            skipped,
+            unsupported,
+            errors,
+            elapsedMs,
+            rate,
+            etaMs,
+            lastTickAt: now,
+        });
+    }
+
+    private computeRate(startedAt: number, processedOverride?: number) {
+        const processed = processedOverride ?? this.progressSubject.value.processed;
+        const elapsedSec = (Date.now() - startedAt) / 1000;
+        if (elapsedSec <= 0) return 0;
+        return +((processed / elapsedSec).toFixed(2));
+    }
+
+    private syncOneTrack(track: SoundCloudTrack, playlistTitle: string, directory: string) {
         const needsStreamResolve =
             !(track.downloadable && track.download_url) && !!(track.streamable && track.stream_url);
 
@@ -115,59 +239,31 @@ export class SyncService {
                 catchError(err => {
                     console.error('getTracKStreamUrl error', err);
                     return of(track as EnrichedTrack);
-                }),
+                })
             )
             : of(track as EnrichedTrack);
 
         return enrichedTrack$.pipe(
-            switchMap((enrichedTrack) =>
-                from(invoke<SyncTrackResponse>('sync_track', {
-                    req: {
-                        track: enrichedTrack,
-                        playlistTitle,
-                        directory,
-                        token: `OAuth ${this.authService.accessToken}`,
-                    }
-                }))
+            switchMap(enrichedTrack =>
+                from(
+                    invoke<SyncTrackResponse>('sync_track', {
+                        req: {
+                            track: enrichedTrack,
+                            playlistTitle,
+                            directory,
+                            token: `OAuth ${this.authService.accessToken}`,
+                        },
+                    })
+                )
             ),
-            tap(res => {
-                const p = this._progress$.value;
-
-                switch (res.action) {
-                    case 'skipped':
-                        this.patch({ skippedExistingCount: p.skippedExistingCount + 1 });
-                        return;
-
-                    case 'downloaded':
-                        this.patch({ downloadedCount: p.downloadedCount + 1 });
-                        return;
-
-                    case 'streamed':
-                        this.patch({ streamedCount: p.streamedCount + 1 });
-                        return;
-
-                    case 'unsupported':
-                        this.patch({ unsupportedCount: p.unsupportedCount + 1 });
-                        return;
-
-                    case 'error':
-                        this.patch({
-                            errorCount: p.errorCount + 1,
-                            error: res.reason ?? 'sync_track_error',
-                        });
-                        return;
-                }
-            }),
             catchError(err => {
                 console.error(`✗ ${track.title}`, err);
-                const p = this._progress$.value;
-                this.patch({ errorCount: p.errorCount + 1, error: String(err) });
-                return of(null);
-            }),
+                return of({
+                    action: 'error',
+                    path: '',
+                    reason: err?.message ?? 'invoke failed',
+                } as SyncTrackResponse);
+            })
         );
-    }
-
-    private patch(p: Partial<SyncProgress>) {
-        this._progress$.next({ ...this._progress$.value, ...p });
     }
 }
