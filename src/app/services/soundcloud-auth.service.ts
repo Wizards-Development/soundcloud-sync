@@ -136,9 +136,9 @@ export class SoundCloudAuthService implements OnInit {
     }
 
     private handleUrls(urls: string[]) {
-        for (const url of urls) {
+        urls.forEach(url => {
             this.handleUrl(url);
-        }
+        })
     }
 
     private handleUrl(url: string) {
