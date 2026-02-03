@@ -37,10 +37,11 @@ export class Home {
   private readonly SAVE_DIRECTORY = 'save_directory';
 
   public isClientCredentialsValid = this.authService.isClientCredentialsValid;
+  public playlists = this.soundcloudService.playlists;
+  public user = this.soundcloudService.user;
   public loadingPlaylists = computed(() => this.playlists() === null);
-  public playlists = this.soundcloudService.getMyPlaylists(false);
+
   public saveDirectory = signal(localStorage.getItem(this.SAVE_DIRECTORY) ?? '')
-  public user: Signal<SoundCloudUser | null> = signal(null);
   public readonly soundcloudAppsUrl = 'https://soundcloud.com/you/apps';
   public readonly callbackUri = this.authService.redirectUri;
   public readonly playlistQuery = signal('');
@@ -68,7 +69,8 @@ export class Home {
 
   public constructor() {
     if (this.isClientCredentialsValid()) {
-      this.user = this.soundcloudService.getMe();
+      this.soundcloudService.loadMe();
+      this.soundcloudService.loadMyPlaylists(false);
 
       const raw = localStorage.getItem(this.SYNCED_PLAYLISTS);
       if (raw) {
@@ -99,6 +101,12 @@ export class Home {
       localStorage.setItem(this.SAVE_DIRECTORY, this.saveDirectory() ?? '');
     });
 
+    effect(() => {
+      if (this.authService.isAuthenticated()) {
+        this.soundcloudService.loadMe();
+        this.soundcloudService.loadMyPlaylists(false);
+      }
+    });
   }
 
   public login(): void {

@@ -1,9 +1,8 @@
-import { inject, Injectable, Signal } from '@angular/core';
+import { inject, Injectable, signal } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { catchError, Observable, of, tap } from 'rxjs';
 import { SoundCloudAuthService } from './soundcloud-auth.service';
 import { SoundCloudPlaylist, SoundCloudTrack, SoundCloudUser, Stream } from '../models/soundcloud.model';
-import { toSignal } from '@angular/core/rxjs-interop';
 
 @Injectable({ providedIn: 'root' })
 export class SoundCloudService {
@@ -12,31 +11,38 @@ export class SoundCloudService {
 
     private readonly apiBase = 'https://api.soundcloud.com';
 
-    public getMe(): Signal<SoundCloudUser | null> {
-        return toSignal(this.http.get<SoundCloudUser>(`${this.apiBase}/me`, { headers: this.getHeaders() }).pipe(tap(result => {
-            if (result !== null) {
-                this.auth.isAuthenticated.set(true)
+    public user = signal<SoundCloudUser | null>(null);
+    public playlists = signal<SoundCloudPlaylist[] | null>(null);
+
+    public loadMe(): void {
+        this.http.get<SoundCloudUser>(`${this.apiBase}/me`, { headers: this.getHeaders() }).subscribe({
+            next: (res) => {
+                this.user.set(res);
+                this.auth.isAuthenticated.set(true);
+            },
+            error: (err) => {
+                if (err.status === 401 || err.status === 403) {
+                    this.auth.isAuthenticated.set(false);
+                    void this.auth.login();
+                }
+                this.user.set(null);
             }
-        }), catchError(err => {
-            if (err.status === 401 || err.status === 403) {
-                this.auth.isAuthenticated.set(false);
-                void this.auth.login();
-            }
-            return of(null);
-        })), { initialValue: null });
+        });
     }
 
-    public getMyPlaylists(withTrack: boolean): Signal<SoundCloudPlaylist[] | null> {
-        return toSignal(this.http.get<SoundCloudPlaylist[]>(`${this.apiBase}/me/playlists?show_tracks=${withTrack}`, { headers: this.getHeaders() }).pipe(tap(result => {
-            if (result !== null) {
-                this.auth.isAuthenticated.set(true)
+    public loadMyPlaylists(withTrack: boolean): void {
+        this.http.get<SoundCloudPlaylist[]>(`${this.apiBase}/me/playlists?show_tracks=${withTrack}`, { headers: this.getHeaders() }).subscribe({
+            next: (res) => {
+                this.playlists.set(res);
+                this.auth.isAuthenticated.set(true);
+            },
+            error: (err) => {
+                if (err.status === 401 || err.status === 403) {
+                    this.auth.isAuthenticated.set(false);
+                }
+                this.playlists.set(null);
             }
-        }), catchError(err => {
-            if (err.status === 401 || err.status === 403) {
-                this.auth.isAuthenticated.set(false)
-            }
-            return of(null);
-        })), { initialValue: null });
+        });
     }
 
     public getPlaylistsTracks(id: string): Observable<SoundCloudTrack[] | null> {
