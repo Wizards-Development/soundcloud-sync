@@ -11,15 +11,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: macos-latest
-            target: aarch64-apple-darwin
+          - platform: macos-latest # for Arm based macs (M1 and above).
             args: --target aarch64-apple-darwin
-          - platform: macos-latest
-            target: x86_64-apple-darwin
+          - platform: macos-latest # for Intel based macs.
             args: --target x86_64-apple-darwin
           - platform: windows-latest
-            target: ""
-            args: ""
+            args: ''
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -34,12 +31,8 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }}
-
-      - name: Rust cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: ${{ runner.os }}-${{ matrix.target }}
+          # Those targets are only used on macos runners so it's in an `if` to slightly speed up windows and linux builds.
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
       - name: Install frontend dependencies
         run: npm ci
