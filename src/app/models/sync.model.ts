@@ -14,6 +14,7 @@ export interface SyncProgress {
   downloadedCount: number;
   streamedCount: number;
   skippedExistingCount: number;
-
+  unsupportedCount: number;
+  errorCount: number;
   error?: string;
 }

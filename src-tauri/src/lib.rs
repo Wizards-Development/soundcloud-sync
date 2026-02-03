@@ -3,6 +3,8 @@ use serde::{ Deserialize, Serialize };
 use std::path::Path;
 use tokio::io::AsyncWriteExt;
 
+type AnyError = Box<dyn std::error::Error + Send + Sync + 'static>;
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SyncTrackRequest {
@@ -47,59 +49,6 @@ fn sanitize_filename(s: &str) -> String {
   cleaned.trim().to_string()
 }
 
-async fn download_file(
-  url: &str,
-  destination_path: &str,
-  token: &str
-) -> Result<(), Box<dyn std::error::Error>> {
-  let client = reqwest::Client::new();
-
-  let response = client.get(url).header("Authorization", token).send().await?;
-
-  if !response.status().is_success() {
-    return Err(format!("Erreur HTTP: {}", response.status()).into());
-  }
-
-  let bytes = response.bytes().await?;
-
-  if let Some(parent) = Path::new(destination_path).parent() {
-    tokio::fs::create_dir_all(parent).await?;
-  }
-
-  let mut file = tokio::fs::File::create(destination_path).await?;
-  file.write_all(&bytes).await?;
-
-  Ok(())
-}
-
-async fn stream_to_file(
-  url: &str,
-  destination_path: &str,
-  token: &str
-) -> Result<(), Box<dyn std::error::Error>> {
-  let client = reqwest::Client::new();
-
-  let response = client.get(url).header("Authorization", token).send().await?;
-
-  if !response.status().is_success() {
-    return Err(format!("Erreur HTTP: {}", response.status()).into());
-  }
-
-  if let Some(parent) = Path::new(destination_path).parent() {
-    tokio::fs::create_dir_all(parent).await?;
-  }
-
-  let mut file = tokio::fs::File::create(destination_path).await?;
-  let mut stream = response.bytes_stream();
-
-  while let Some(chunk) = stream.next().await {
-    let data = chunk?;
-    file.write_all(&data).await?;
-  }
-
-  Ok(())
-}
-
 async fn track_exists(path: String) -> bool {
   tokio::fs
     ::metadata(path).await
@@ -115,6 +64,80 @@ fn resp(action: &str, path: &str, reason: Option<&str>) -> SyncTrackResponse {
   }
 }
 
+async fn remove_if_exists(path: &str) {
+  let _ = tokio::fs::remove_file(path).await;
+}
+
+async fn cleanup_part_for(destination_path: &str) {
+  let tmp_path = format!("{}.part", destination_path);
+  let _ = tokio::fs::remove_file(tmp_path).await;
+}
+
+async fn write_response_to_temp_then_rename(
+  response: reqwest::Response,
+  destination_path: &str
+) -> Result<(), AnyError> {
+  let dest = Path::new(destination_path);
+
+  if let Some(parent) = dest.parent() {
+    tokio::fs::create_dir_all(parent).await?;
+  }
+
+  let tmp_path = format!("{}.part", destination_path);
+  remove_if_exists(&tmp_path).await;
+
+  let expected_len = response.content_length();
+
+  let mut file = tokio::fs::File::create(&tmp_path).await?;
+  let mut stream = response.bytes_stream();
+
+  let mut written: u64 = 0;
+  while let Some(chunk) = stream.next().await {
+    let data = chunk?;
+    file.write_all(&data).await?;
+    written += data.len() as u64;
+  }
+
+  file.flush().await?;
+  file.sync_all().await?;
+  drop(file);
+
+  if let Some(exp) = expected_len {
+    if written != exp {
+      remove_if_exists(&tmp_path).await;
+      return Err(
+        format!("Téléchargement incomplet: écrit {} octets, attendu {} octets", written, exp).into()
+      );
+    }
+  }
+
+  tokio::fs::rename(&tmp_path, destination_path).await?;
+  Ok(())
+}
+
+async fn fetch_to_file_atomic(
+  url: &str,
+  destination_path: &str,
+  token: &str
+) -> Result<(), AnyError> {
+  let client = reqwest::Client::new();
+
+  let response = client.get(url).header("Authorization", token).send().await?;
+
+  if !response.status().is_success() {
+    return Err(format!("Erreur HTTP: {}", response.status()).into());
+  }
+
+  if let Err(e) = write_response_to_temp_then_rename(response, destination_path).await {
+    let msg = e.to_string();
+    let tmp_path = format!("{}.part", destination_path);
+    remove_if_exists(&tmp_path).await;
+    return Err(msg.into());
+  }
+
+  Ok(())
+}
+
 #[tauri::command]
 async fn sync_track(req: SyncTrackRequest) -> Result<SyncTrackResponse, String> {
   let title = req.track.title.clone().unwrap_or_else(|| format!("track-{}", req.track.id));
@@ -124,6 +147,8 @@ async fn sync_track(req: SyncTrackRequest) -> Result<SyncTrackResponse, String> 
 
   let path = format!("{}/{}/{}.mp3", req.directory, safe_playlist, safe_title);
 
+  cleanup_part_for(&path).await;
+
   if track_exists(path.clone()).await {
     return Ok(resp("skipped", &path, Some("already_exists")));
   }
@@ -131,7 +156,7 @@ async fn sync_track(req: SyncTrackRequest) -> Result<SyncTrackResponse, String> 
   let downloadable = req.track.downloadable.unwrap_or(false);
   if downloadable {
     if let Some(url) = req.track.download_url.as_deref() {
-      download_file(url, &path, &req.token).await.map_err(|e| e.to_string())?;
+      fetch_to_file_atomic(url, &path, &req.token).await.map_err(|e| e.to_string())?;
       return Ok(resp("downloaded", &path, None));
     }
   }
@@ -139,7 +164,7 @@ async fn sync_track(req: SyncTrackRequest) -> Result<SyncTrackResponse, String> 
   let streamable = req.track.streamable.unwrap_or(false);
   if streamable {
     if let Some(url) = req.track.http_mp3_128_url.as_deref() {
-      stream_to_file(url, &path, &req.token).await.map_err(|e| e.to_string())?;
+      fetch_to_file_atomic(url, &path, &req.token).await.map_err(|e| e.to_string())?;
       return Ok(resp("streamed", &path, None));
     } else {
       return Ok(resp("error", &path, Some("missing_http_mp3_128_url")));

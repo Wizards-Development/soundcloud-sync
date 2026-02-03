@@ -73,6 +73,15 @@
                     ({{synchronise.currentTrackTitle}})</span>
             </ng-template>
         </p-progressbar>
+        <div class="mt-2 text-sm">
+            <div>Downloaded: {{ synchronise.downloadedCount }}</div>
+            <div>Streamed: {{ synchronise.streamedCount }}</div>
+            <div>Skipped: {{ synchronise.skippedExistingCount }}</div>
+            <div>unsuported: {{ synchronise.unsupportedCount }}</div>
+            @if (synchronise.error) {
+            <div class="text-red-500">Last error: {{ synchronise.error }}</div>
+            }
+        </div>
         }
         }
 
