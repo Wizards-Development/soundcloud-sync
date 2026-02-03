@@ -5,6 +5,17 @@ import { invoke } from '@tauri-apps/api/core';
 import { SoundCloudService } from './soundcloud.service';
 import { SoundCloudAuthService } from './soundcloud-auth.service';
 import { SyncProgress } from '../models/sync.model';
+import { SoundCloudTrack } from '../models/soundcloud.model';
+
+type EnrichedTrack = SoundCloudTrack & {
+    http_mp3_128_url?: string;
+};
+
+type SyncTrackResponse = {
+    action: 'skipped' | 'downloaded' | 'streamed' | 'unsupported' | 'error';
+    path: string;
+    reason?: string | null;
+};
 
 @Injectable({ providedIn: 'root' })
 export class SyncService {
@@ -47,6 +58,7 @@ export class SyncService {
                     tracksDone: 0,
                     tracksTotal: 0,
                     currentTrackTitle: undefined,
+                    error: undefined,
                 });
 
                 return this.soundcloudService.getPlaylistsTracks(playlistId).pipe(
@@ -64,65 +76,79 @@ export class SyncService {
                                     tracksDone: trackIdx + 1,
                                 });
 
-                                const path = `${directory}/${playlistTitle}/${track.title}.mp3`;
+                                const needsStreamResolve =
+                                    !(track.downloadable && track.download_url) && !!(track.streamable && track.stream_url);
 
-                                return from(invoke<boolean>('track_exists', { path })).pipe(
-                                    switchMap(exists => {
-                                        if (exists) {
+                                const enrichedTrack$ = needsStreamResolve
+                                    ? this.soundcloudService.getTracKStreamUrl(track.id).pipe(
+                                        map(stream => {
+                                            const enriched: EnrichedTrack = {
+                                                ...track,
+                                                http_mp3_128_url: stream?.http_mp3_128_url,
+                                            };
+                                            return enriched;
+                                        }),
+                                        catchError(err => {
+                                            console.error('getTracKStreamUrl error', err);
+                                            return of(track);
+                                        })
+                                    )
+                                    : of(track);
+
+                                return enrichedTrack$.pipe(
+                                    switchMap((enrichedTrack: EnrichedTrack) =>
+                                        from(
+                                            invoke<SyncTrackResponse>('sync_track', {
+                                                req: {
+                                                    track: enrichedTrack,
+                                                    playlistTitle,
+                                                    directory,
+                                                    token: `OAuth ${this.authService.accessToken}`,
+                                                }
+                                            })
+                                        )
+                                    ),
+                                    tap(res => {
+                                        if (res.action === 'skipped') {
                                             this.patch({
                                                 skippedExistingCount: this._progress$.value.skippedExistingCount + 1,
-                                                tracksDone: trackIdx + 1,
                                             });
-                                            return of(null);
+                                            return;
                                         }
 
-                                        if (track.downloadable && track.download_url) {
-                                            return from(
-                                                invoke('download', {
-                                                    url: track.download_url,
-                                                    path,
-                                                    token: `OAuth ${this.authService.accessToken}`,
-                                                })
-                                            ).pipe(
-                                                tap(() => {
-                                                    console.log(`✓ ${track.title} téléchargé`);
-                                                    this.patch({
-                                                        downloadedCount: this._progress$.value.downloadedCount + 1,
-                                                        tracksDone: trackIdx + 1,
-                                                    });
-                                                })
-                                            );
+                                        if (res.action === 'downloaded') {
+                                            console.log(`✓ ${track.title} téléchargé`);
+                                            this.patch({
+                                                downloadedCount: this._progress$.value.downloadedCount + 1,
+                                            });
+                                            return;
                                         }
 
-                                        if (track.streamable && track.stream_url) {
-                                            return this.soundcloudService.getTracKStreamUrl(track.id).pipe(
-                                                switchMap(streamable =>
-                                                    from(
-                                                        invoke('stream', {
-                                                            url: streamable?.http_mp3_128_url,
-                                                            path,
-                                                            token: `OAuth ${this.authService.accessToken}`,
-                                                        })
-                                                    )
-                                                ),
-                                                tap(() => {
-                                                    console.log(`✓ ${track.title} streamé`);
-                                                    this.patch({
-                                                        streamedCount: this._progress$.value.streamedCount + 1,
-                                                        tracksDone: trackIdx + 1,
-                                                    });
-                                                })
-                                            );
+                                        if (res.action === 'streamed') {
+                                            console.log(`✓ ${track.title} streamé`);
+                                            this.patch({
+                                                streamedCount: this._progress$.value.streamedCount + 1,
+                                            });
+                                            return;
                                         }
 
-                                        this.patch({ tracksDone: trackIdx + 1 });
-                                        return of(null);
+                                        if (res.action === 'unsupported') {
+                                            console.warn(`~ ${track.title} unsupported`, res.reason);
+                                            return;
+                                        }
+
+                                        if (res.action === 'error') {
+                                            console.error(`✗ ${track.title}`, res.reason);
+                                            this.patch({ error: res.reason ?? 'sync_track_error' });
+                                            return;
+                                        }
                                     }),
                                     catchError(err => {
                                         console.error(`✗ ${track.title}`, err);
-                                        this.patch({ error: String(err), tracksDone: trackIdx + 1 });
+                                        this.patch({ error: String(err) });
                                         return of(null);
-                                    })
+                                    }),
+                                    tap(() => this.patch({ tracksDone: trackIdx + 1 }))
                                 );
                             }),
                             finalize(() => {
