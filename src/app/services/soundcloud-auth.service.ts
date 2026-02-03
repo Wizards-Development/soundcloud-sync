@@ -1,12 +1,12 @@
-import { inject, Injectable, OnInit, signal } from '@angular/core';
+import { inject, Injectable, signal } from '@angular/core';
 import { randomString, sha256Base64Url } from './pkce';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { Router } from '@angular/router';
 import { openUrl } from '@tauri-apps/plugin-opener';
-import { getCurrent, onOpenUrl } from '@tauri-apps/plugin-deep-link';
+import { onOpenUrl } from '@tauri-apps/plugin-deep-link';
 
 @Injectable({ providedIn: 'root' })
-export class SoundCloudAuthService implements OnInit {
+export class SoundCloudAuthService {
     private readonly SC_CLIENT_ID = 'sc_client_id';
     private readonly SC_CLIENT_SECRET = 'sc_client_secret';
     private readonly SC_STATE = 'sc_state';
@@ -71,11 +71,8 @@ export class SoundCloudAuthService implements OnInit {
         sessionStorage.setItem(this.SC_REFRESH_TOKEN, value);
     }
 
-    async ngOnInit() {
-        const urls = await getCurrent();
-        if (urls?.length) this.handleUrls(urls);
-
-        await onOpenUrl((urls) => {
+    constructor() {
+        void onOpenUrl((urls) => {
             this.handleUrls(urls);
         });
     }
