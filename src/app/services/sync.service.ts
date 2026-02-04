@@ -1,7 +1,6 @@
 import { inject, Injectable } from '@angular/core';
 import {
     BehaviorSubject,
-    EMPTY,
     from,
     interval,
     merge,
@@ -18,15 +17,12 @@ import {
     tap,
     toArray,
     takeWhile,
-    mapTo,
 } from 'rxjs/operators';
 import { invoke } from '@tauri-apps/api/core';
 import { SoundCloudService } from './soundcloud.service';
 import { SoundCloudAuthService } from './soundcloud-auth.service';
 import { SoundCloudTrack } from '../models/soundcloud.model';
 import { SyncProgress, SyncStatus } from '../models/sync.model';
-
-type EnrichedTrack = SoundCloudTrack & { http_mp3_128_url?: string };
 
 type SyncTrackResponse = {
     action: 'skipped' | 'downloaded' | 'streamed' | 'unsupported' | 'error';
@@ -116,7 +112,7 @@ export class SyncService {
                     lastTickAt: now,
                 });
             }),
-            mapTo(void 0)
+            map(() => void 0)
         );
 
         const main$ = from(entries).pipe(
@@ -230,32 +226,17 @@ export class SyncService {
     }
 
     private syncOneTrack(track: SoundCloudTrack, playlistTitle: string, directory: string) {
-        const needsStreamResolve =
-            !(track.downloadable && track.download_url) && !!(track.streamable && track.stream_url);
-
-        const enrichedTrack$ = needsStreamResolve
-            ? this.soundcloudService.getTracKStreamUrl(track.id).pipe(
-                map(stream => ({ ...track, http_mp3_128_url: stream?.http_mp3_128_url } as EnrichedTrack)),
-                catchError(err => {
-                    console.error('getTracKStreamUrl error', err);
-                    return of(track as EnrichedTrack);
-                })
-            )
-            : of(track as EnrichedTrack);
-
-        return enrichedTrack$.pipe(
-            switchMap(enrichedTrack =>
-                from(
-                    invoke<SyncTrackResponse>('sync_track', {
-                        req: {
-                            track: enrichedTrack,
-                            playlistTitle,
-                            directory,
-                            token: `OAuth ${this.authService.accessToken}`,
-                        },
-                    })
-                )
-            ),
+        return from(
+            invoke<SyncTrackResponse>('sync_track', {
+                req: {
+                    track,
+                    playlistTitle,
+                    directory,
+                    token: `OAuth ${this.authService.accessToken}`,
+                    apiBase: this.soundcloudService.apiBase,
+                },
+            })
+        ).pipe(
             catchError(err => {
                 console.error(`✗ ${track.title}`, err);
                 return of({

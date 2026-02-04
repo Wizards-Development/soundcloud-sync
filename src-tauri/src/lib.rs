@@ -12,6 +12,7 @@ pub struct SyncTrackRequest {
   pub playlist_title: String,
   pub directory: String,
   pub token: String,
+  pub api_base: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -29,6 +30,11 @@ pub struct SoundCloudTrack {
   pub download_url: Option<String>,
 
   #[serde(rename = "http_mp3_128_url")]
+  pub http_mp3_128_url: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct Stream {
   pub http_mp3_128_url: Option<String>,
 }
 
@@ -121,7 +127,6 @@ async fn fetch_to_file_atomic(
   token: &str
 ) -> Result<(), AnyError> {
   let client = reqwest::Client::new();
-
   let response = client.get(url).header("Authorization", token).send().await?;
 
   if !response.status().is_success() {
@@ -136,6 +141,37 @@ async fn fetch_to_file_atomic(
   }
 
   Ok(())
+}
+
+async fn fetch_track_stream(
+  api_base: &str,
+  track_id: i64,
+  token: &str
+) -> Result<Option<Stream>, AnyError> {
+  let base = api_base.trim_end_matches('/');
+  let url = format!("{}/tracks/soundcloud:tracks:{}/streams", base, track_id);
+
+  let client = reqwest::Client::new();
+  let res = client.get(&url).header("Authorization", token).send().await?;
+
+  if
+    res.status() == reqwest::StatusCode::UNAUTHORIZED ||
+    res.status() == reqwest::StatusCode::FORBIDDEN
+  {
+    return Ok(None);
+  }
+
+  if !res.status().is_success() {
+    return Err(format!("streams endpoint HTTP error: {}", res.status()).into());
+  }
+
+  let body = res.text().await?;
+  if body.trim().is_empty() || body.trim() == "null" {
+    return Ok(None);
+  }
+
+  let stream: Stream = serde_json::from_str(&body)?;
+  Ok(Some(stream))
 }
 
 #[tauri::command]
@@ -153,17 +189,33 @@ async fn sync_track(req: SyncTrackRequest) -> Result<SyncTrackResponse, String> 
     return Ok(resp("skipped", &path, Some("already_exists")));
   }
 
-  let downloadable = req.track.downloadable.unwrap_or(false);
+  /*   let downloadable = req.track.downloadable.unwrap_or(false);
   if downloadable {
     if let Some(url) = req.track.download_url.as_deref() {
       fetch_to_file_atomic(url, &path, &req.token).await.map_err(|e| e.to_string())?;
       return Ok(resp("downloaded", &path, None));
     }
-  }
+  } */
 
   let streamable = req.track.streamable.unwrap_or(false);
   if streamable {
-    if let Some(url) = req.track.http_mp3_128_url.as_deref() {
+    let mut mp3_url = req.track.http_mp3_128_url.clone();
+
+    if mp3_url.as_deref().unwrap_or("").is_empty() {
+      match fetch_track_stream(&req.api_base, req.track.id, &req.token).await {
+        Ok(Some(stream)) => {
+          mp3_url = stream.http_mp3_128_url;
+        }
+        Ok(None) => {
+          return Ok(resp("error", &path, Some("stream_resolve_returned_null_or_unauthorized")));
+        }
+        Err(e) => {
+          return Ok(resp("error", &path, Some(&format!("stream_resolve_failed: {}", e))));
+        }
+      }
+    }
+
+    if let Some(url) = mp3_url.as_deref() {
       fetch_to_file_atomic(url, &path, &req.token).await.map_err(|e| e.to_string())?;
       return Ok(resp("streamed", &path, None));
     } else {

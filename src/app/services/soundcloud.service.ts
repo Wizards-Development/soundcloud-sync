@@ -9,7 +9,7 @@ export class SoundCloudService {
     private http = inject(HttpClient);
     private auth = inject(SoundCloudAuthService);
 
-    private readonly apiBase = 'https://api.soundcloud.com';
+    public readonly apiBase = 'https://api.soundcloud.com';
 
     public user = signal<SoundCloudUser | null>(null);
     public playlists = signal<SoundCloudPlaylist[] | null>(null);
