@@ -4,6 +4,7 @@ import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { Router } from '@angular/router';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { onOpenUrl } from '@tauri-apps/plugin-deep-link';
+import { firstValueFrom } from 'rxjs';
 
 @Injectable({ providedIn: 'root' })
 export class SoundCloudAuthService {
@@ -13,6 +14,7 @@ export class SoundCloudAuthService {
     private readonly SC_CODE_VERIFIER = 'sc_code_verifier';
     private readonly SC_ACCESS_TOKEN = 'sc_access_token';
     private readonly SC_REFRESH_TOKEN = 'sc_refresh_token';
+    private readonly SC_EXPIRES_AT = 'sc_expires_at';
 
     private baseUrl = "https://secure.soundcloud.com"
 
@@ -22,6 +24,8 @@ export class SoundCloudAuthService {
 
     private http = inject(HttpClient);
     private router = inject(Router);
+
+    private refreshingPromise: Promise<boolean> | null = null;
 
     public get clientId(): string {
         return localStorage.getItem(this.SC_CLIENT_ID) ?? ''
@@ -56,22 +60,36 @@ export class SoundCloudAuthService {
     }
 
     public get accessToken(): string {
-        return sessionStorage.getItem(this.SC_ACCESS_TOKEN) ?? '';
+        return localStorage.getItem(this.SC_ACCESS_TOKEN) ?? '';
     }
 
     private set accessToken(value: string) {
-        sessionStorage.setItem(this.SC_ACCESS_TOKEN, value);
+        localStorage.setItem(this.SC_ACCESS_TOKEN, value);
     }
 
-    private get refreshToken(): string {
-        return sessionStorage.getItem(this.SC_REFRESH_TOKEN) ?? ''
+    public get refreshToken(): string {
+        return localStorage.getItem(this.SC_REFRESH_TOKEN) ?? ''
     }
 
     private set refreshToken(value: string) {
-        sessionStorage.setItem(this.SC_REFRESH_TOKEN, value);
+        localStorage.setItem(this.SC_REFRESH_TOKEN, value);
+    }
+
+    private get expiresAt(): number {
+        return +(localStorage.getItem(this.SC_EXPIRES_AT) ?? '0');
+    }
+
+    private set expiresAt(value: number) {
+        localStorage.setItem(this.SC_EXPIRES_AT, value.toString());
     }
 
     constructor() {
+        if (this.accessToken && this.expiresAt > Date.now()) {
+            this.isAuthenticated.set(true);
+        } else {
+            this.isAuthenticated.set(false);
+        }
+
         void onOpenUrl((urls) => {
             this.handleUrls(urls);
         });
@@ -116,11 +134,10 @@ export class SoundCloudAuthService {
             )
             .subscribe({
                 next: (res) => {
-                    this.accessToken = res.access_token;
-                    this.refreshToken = res.refresh_token;
-                    this.isAuthenticated.set(true);
-                    localStorage.setItem("isClientCredentialsValid", "true");
-                    this.isClientCredentialsValid.set(true);
+                    this.setTokensFromResponse(res);
+                    try { sessionStorage.removeItem(this.SC_CODE_VERIFIER); } catch { }
+                    try { sessionStorage.removeItem(this.SC_STATE); } catch { }
+
                     this.router.navigateByUrl('/home');
                 },
                 error: (err) => {
@@ -130,6 +147,91 @@ export class SoundCloudAuthService {
                     alert('Erreur token SoundCloud');
                 },
             });
+    }
+
+
+    public async refresh(): Promise<boolean> {
+        if (this.refreshingPromise) return this.refreshingPromise;
+
+        if (!this.refreshToken) {
+            return false;
+        }
+
+        this.refreshingPromise = (async () => {
+            const body = new URLSearchParams();
+            body.set('grant_type', 'refresh_token');
+            body.set('client_id', this.clientId);
+            body.set('client_secret', this.clientSecret);
+            body.set('refresh_token', this.refreshToken);
+
+            const headers = new HttpHeaders({
+                'Content-Type': 'application/x-www-form-urlencoded',
+                Accept: 'application/json; charset=utf-8',
+            });
+
+            try {
+                const res = await firstValueFrom(this.http.post<any>(`${this.baseUrl}/oauth/token`, body.toString(), { headers }));
+                this.setTokensFromResponse(res);
+                this.refreshingPromise = null;
+                return true;
+            } catch (err) {
+                console.error('Refresh token failed', err);
+                this.clearTokens();
+                this.isAuthenticated.set(false);
+                this.refreshingPromise = null;
+                return false;
+            }
+        })();
+
+        return this.refreshingPromise;
+    }
+
+    public async ensureValidAccessToken(): Promise<boolean> {
+        const marginMs = 60_000;
+        if (this.accessToken && this.expiresAt > Date.now() + marginMs) {
+            this.isAuthenticated.set(true);
+            return true;
+        }
+        if (this.refreshToken) {
+            const ok = await this.refresh();
+            this.isAuthenticated.set(!!ok);
+            return ok;
+        }
+        this.isAuthenticated.set(false);
+        return false;
+    }
+
+    private setTokensFromResponse(res: any) {
+        if (!res) return;
+        if (res.access_token) {
+            this.accessToken = res.access_token;
+        }
+        if (res.refresh_token) {
+            this.refreshToken = res.refresh_token;
+        }
+        if (res.expires_in) {
+            this.expiresAt = Date.now() + res.expires_in * 1000;
+        } else {
+            this.expiresAt = Date.now() + 60 * 60 * 1000;
+        }
+
+        this.isAuthenticated.set(true);
+        localStorage.setItem("isClientCredentialsValid", "true");
+        this.isClientCredentialsValid.set(true);
+    }
+
+    public logout(): void {
+        this.clearTokens();
+        this.isAuthenticated.set(false);
+        this.isClientCredentialsValid.set(false);
+        localStorage.removeItem("isClientCredentialsValid");
+        this.router.navigateByUrl('/home');
+    }
+
+    private clearTokens(): void {
+        try { localStorage.removeItem(this.SC_ACCESS_TOKEN); } catch { }
+        try { localStorage.removeItem(this.SC_REFRESH_TOKEN); } catch { }
+        try { localStorage.removeItem(this.SC_EXPIRES_AT); } catch { }
     }
 
     private handleUrls(urls: string[]) {
