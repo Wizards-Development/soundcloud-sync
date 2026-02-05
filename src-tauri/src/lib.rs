@@ -2,6 +2,14 @@ use futures_util::StreamExt;
 use serde::{ Deserialize, Serialize };
 use std::path::Path;
 use tokio::io::AsyncWriteExt;
+use lofty::picture::{ Picture, PictureType };
+use lofty::tag::{ Accessor, Tag, TagExt, TagType, ItemKey, ItemValue, TagItem };
+use lofty::file::TaggedFileExt;
+use lofty::config::WriteOptions;
+use std::io::Cursor;
+use image::imageops::FilterType;
+use image::codecs::jpeg::JpegEncoder;
+use image::GenericImageView;
 
 type AnyError = Box<dyn std::error::Error + Send + Sync + 'static>;
 
@@ -13,6 +21,11 @@ pub struct SyncTrackRequest {
   pub directory: String,
   pub token: String,
   pub api_base: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SoundCloudUser {
+  pub username: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -31,6 +44,14 @@ pub struct SoundCloudTrack {
 
   #[serde(rename = "http_mp3_128_url")]
   pub http_mp3_128_url: Option<String>,
+
+  pub artwork_url: Option<String>,
+  pub user: Option<SoundCloudUser>,
+
+  pub description: Option<String>,
+  pub label_name: Option<String>,
+  pub genre: Option<String>,
+  pub tag_list: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -143,6 +164,84 @@ async fn fetch_to_file_atomic(
   Ok(())
 }
 
+fn normalize_soundcloud_artwork_url(url: &str) -> String {
+  url.replace("-large.", "-t500x500.")
+}
+
+fn square_and_resize_cover_jpeg(
+  input_bytes: &[u8],
+  size: u32,
+  quality: u8
+) -> Result<Vec<u8>, AnyError> {
+  let img = image::load_from_memory(input_bytes)?;
+  let (w, h) = img.dimensions();
+  let side = w.min(h);
+
+  let x = (w - side) / 2;
+  let y = (h - side) / 2;
+
+  let cropped = img.crop_imm(x, y, side, side);
+  let resized = cropped.resize_exact(size, size, FilterType::Lanczos3);
+
+  let mut out = Vec::new();
+  let mut enc = JpegEncoder::new_with_quality(&mut out, quality);
+  enc.encode_image(&resized)?;
+  Ok(out)
+}
+
+async fn tag_mp3_after_success(
+  path: &str,
+  artist: Option<&str>,
+  artwork_url: Option<&str>,
+  comment: Option<&str>,
+  label: Option<&str>,
+  genre: Option<&str>
+) -> Result<(), AnyError> {
+  let mut tag = match lofty::read_from_path(path) {
+    Ok(tf) =>
+      tf
+        .primary_tag()
+        .cloned()
+        .unwrap_or_else(|| Tag::new(TagType::Id3v2)),
+    Err(_) => Tag::new(TagType::Id3v2),
+  };
+
+  tag.re_map(TagType::Id3v2);
+
+  if let Some(a) = artist.filter(|s| !s.trim().is_empty()) {
+    tag.set_artist(a.to_string());
+  }
+
+  if let Some(url) = artwork_url.filter(|s| !s.trim().is_empty()) {
+    let url = normalize_soundcloud_artwork_url(url);
+
+    let bytes = reqwest::get(&url).await?.bytes().await?;
+
+    let squared_jpeg = square_and_resize_cover_jpeg(&bytes, 500, 90)?;
+
+    let mut pic = Picture::from_reader(&mut Cursor::new(squared_jpeg))?;
+    pic.set_pic_type(PictureType::CoverFront);
+
+    tag.set_picture(0, pic);
+  }
+
+  if let Some(g) = genre.filter(|s| !s.trim().is_empty()) {
+    tag.set_genre(g.to_string());
+  }
+
+  if let Some(c) = comment.filter(|s| !s.trim().is_empty()) {
+    tag.insert_text(ItemKey::Comment, c.to_string());
+  }
+
+  if let Some(l) = label.filter(|s| !s.trim().is_empty()) {
+    let item = TagItem::new(ItemKey::Unknown("TPUB".to_string()), ItemValue::Text(l.to_string()));
+    tag.insert_unchecked(item);
+  }
+
+  tag.save_to_path(path, WriteOptions::default())?;
+  Ok(())
+}
+
 async fn fetch_track_stream(
   api_base: &str,
   track_id: i64,
@@ -196,7 +295,7 @@ async fn sync_track(req: SyncTrackRequest) -> Result<SyncTrackResponse, String> 
       return Ok(resp("downloaded", &path, None));
     }
   } */
-
+ 
   let streamable = req.track.streamable.unwrap_or(false);
   if streamable {
     let mut mp3_url = req.track.http_mp3_128_url.clone();
@@ -215,8 +314,21 @@ async fn sync_track(req: SyncTrackRequest) -> Result<SyncTrackResponse, String> 
       }
     }
 
-    if let Some(url) = mp3_url.as_deref() {
+    if let Some(url) = mp3_url.as_deref().filter(|s| !s.trim().is_empty()) {
       fetch_to_file_atomic(url, &path, &req.token).await.map_err(|e| e.to_string())?;
+
+      let artist = req.track.user.as_ref().and_then(|u| u.username.as_deref());
+      let artwork = req.track.artwork_url.as_deref();
+
+      let comment = req.track.description.as_deref();
+
+      let label = req.track.tag_list.as_deref();
+      let genre = req.track.genre.as_deref();
+
+      if let Err(e) = tag_mp3_after_success(&path, artist, artwork, comment, label, genre).await {
+        return Ok(resp("error", &path, Some(&format!("tagging_failed: {}", e))));
+      }
+
       return Ok(resp("streamed", &path, None));
     } else {
       return Ok(resp("error", &path, Some("missing_http_mp3_128_url")));
