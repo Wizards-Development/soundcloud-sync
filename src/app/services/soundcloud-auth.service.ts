@@ -15,12 +15,14 @@ export class SoundCloudAuthService {
     private readonly SC_ACCESS_TOKEN = 'sc_access_token';
     private readonly SC_REFRESH_TOKEN = 'sc_refresh_token';
     private readonly SC_EXPIRES_AT = 'sc_expires_at';
+    private readonly IS_CLIENT_CREDENTIALS_VALID = 'isClientCredentialsValid';
+    private readonly FIRST_LAUNCH = 'first_launch';
 
     private baseUrl = "https://secure.soundcloud.com"
 
     public redirectUri = `soundcloud-sync://auth/callback`;
     public isAuthenticated = signal(false);
-    public isClientCredentialsValid = signal(localStorage.getItem("isClientCredentialsValid") ? true : false);
+    public isClientCredentialsValid = signal(localStorage.getItem(this.IS_CLIENT_CREDENTIALS_VALID) ? true : false);
 
     private http = inject(HttpClient);
     private router = inject(Router);
@@ -81,6 +83,14 @@ export class SoundCloudAuthService {
 
     private set expiresAt(value: number) {
         localStorage.setItem(this.SC_EXPIRES_AT, value.toString());
+    }
+
+    public get firstLaunch(): boolean {
+        return !!localStorage.getItem(this.FIRST_LAUNCH);
+    }
+
+    private set firstLaunch(value: boolean) {
+        localStorage.setItem(this.FIRST_LAUNCH, value.toString());
     }
 
     constructor() {
@@ -216,7 +226,8 @@ export class SoundCloudAuthService {
         }
 
         this.isAuthenticated.set(true);
-        localStorage.setItem("isClientCredentialsValid", "true");
+        localStorage.setItem(this.IS_CLIENT_CREDENTIALS_VALID, "true");
+        this.firstLaunch = true;
         this.isClientCredentialsValid.set(true);
     }
 
@@ -224,7 +235,7 @@ export class SoundCloudAuthService {
         this.clearTokens();
         this.isAuthenticated.set(false);
         this.isClientCredentialsValid.set(false);
-        localStorage.removeItem("isClientCredentialsValid");
+        localStorage.removeItem(this.IS_CLIENT_CREDENTIALS_VALID);
         this.router.navigateByUrl('/home');
     }
 

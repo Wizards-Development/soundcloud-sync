@@ -53,6 +53,7 @@ export class Home {
     return list.filter(p => (p.title ?? '').toLowerCase().includes(q));
   });
   public readonly syncedPlaylists = signal<Map<string, string>>(new Map());
+  private firstLaunch = this.authService.firstLaunch;
 
   public form = this.fb.nonNullable.group({
     clientId: ['', [Validators.required]],
@@ -66,7 +67,7 @@ export class Home {
   public constructor() {
     if (this.isClientCredentialsValid()) {
       this.soundcloudService.loadMe();
-      this.soundcloudService.loadMyPlaylists(false);
+      this.soundcloudService.loadMyPlaylists(!this.firstLaunch);
 
       const raw = localStorage.getItem(this.SYNCED_PLAYLISTS);
       if (raw) {
@@ -100,7 +101,7 @@ export class Home {
     effect(() => {
       if (this.authService.isAuthenticated()) {
         this.soundcloudService.loadMe();
-        this.soundcloudService.loadMyPlaylists(false);
+        this.soundcloudService.loadMyPlaylists(!this.firstLaunch);
       }
     });
   }
@@ -175,4 +176,11 @@ export class Home {
     return Math.round((p.processed / p.total) * 100 * 100) / 100;
   }
 
+  public getPlaylistArtworkUrl(playlist: SoundCloudPlaylist) {
+    if (playlist.artwork_url) {
+      return playlist.artwork_url;
+    } else {
+      return this.soundcloudService.playlistArtworks[playlist.id];
+    }
+  }
 }

@@ -6,6 +6,8 @@ import { SoundCloudPlaylist, SoundCloudTrack, SoundCloudUser, Stream } from '../
 
 @Injectable({ providedIn: 'root' })
 export class SoundCloudService {
+    private readonly SC_PLAYLIST_ARTWORKS = 'sc_playlist_artworks';
+
     private http = inject(HttpClient);
     private auth = inject(SoundCloudAuthService);
 
@@ -13,6 +15,14 @@ export class SoundCloudService {
 
     public user = signal<SoundCloudUser | null>(null);
     public playlists = signal<SoundCloudPlaylist[] | null>(null);
+
+    public get playlistArtworks(): Record<string, string> {
+        return JSON.parse(localStorage.getItem(this.SC_PLAYLIST_ARTWORKS) ?? '{}')
+    }
+
+    private set playlistArtworks(value: string) {
+        localStorage.setItem(this.SC_PLAYLIST_ARTWORKS, value);
+    }
 
     public loadMe(): void {
         this.http.get<SoundCloudUser>(`${this.apiBase}/me`, { headers: this.getHeaders() }).subscribe({
@@ -35,6 +45,14 @@ export class SoundCloudService {
             next: (res) => {
                 this.playlists.set(res);
                 this.auth.isAuthenticated.set(true);
+
+                if (withTrack && res) {
+                    res.forEach(playlist => {
+                        if (playlist?.id && Array.isArray(playlist.tracks) && !playlist.artwork_url) {
+                            this.updatePlaylistArtworkMap(String(playlist.id), playlist.tracks);
+                        }
+                    });
+                }
             },
             error: (err) => {
                 if (err.status === 401 || err.status === 403) {
@@ -46,16 +64,20 @@ export class SoundCloudService {
     }
 
     public getPlaylistsTracks(id: string): Observable<SoundCloudTrack[] | null> {
-        return this.http.get<SoundCloudTrack[]>(`${this.apiBase}/playlists/${id}/tracks`, { headers: this.getHeaders() }).pipe(tap(result => {
-            if (result !== null) {
-                this.auth.isAuthenticated.set(true)
-            }
-        }), catchError(err => {
-            if (err.status === 401 || err.status === 403) {
-                this.auth.isAuthenticated.set(false)
-            }
-            return of(null);
-        }));
+        return this.http.get<SoundCloudTrack[]>(`${this.apiBase}/playlists/${id}/tracks`, { headers: this.getHeaders() }).pipe(
+            tap(result => {
+                if (result !== null) {
+                    this.auth.isAuthenticated.set(true);
+                    this.updatePlaylistArtworkMap(id, result);
+                }
+            }),
+            catchError(err => {
+                if (err.status === 401 || err.status === 403) {
+                    this.auth.isAuthenticated.set(false)
+                }
+                return of(null);
+            })
+        );
     }
 
     public getTracKStreamUrl(id: number): Observable<Stream | null> {
@@ -76,5 +98,26 @@ export class SoundCloudService {
             Authorization: `OAuth ${this.auth.accessToken}`,
             Accept: 'application/json; charset=utf-8',
         });
+    }
+
+    private updatePlaylistArtworkMap(playlistId: string, tracks: SoundCloudTrack[] | null): void {
+        if (!tracks) return;
+
+        try {
+            const url = tracks
+                .map(t => t.artwork_url)
+                .find((u): u is string => !!u);
+
+            const map = this.playlistArtworks;
+
+            if (url) {
+                map[playlistId] = url;
+            } else {
+                if (map.hasOwnProperty(playlistId)) delete map[playlistId];
+            }
+            this.playlistArtworks = JSON.stringify(map);
+        } catch (e) {
+            console.warn('Failed to update playlist artwork map in localStorage', e);
+        }
     }
 }
