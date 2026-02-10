@@ -20,8 +20,8 @@
         dans votre navigateur. <br>
         Si vous n'avez pas d'app enregistrée cliquez sur <strong>Sign up for a new app</strong> comme nom et
         description mettez: "synchroniser". <br>
-        Ensuite quand l'app est créée assurez vous que le <strong>Redirect URI</strong> est bien: <div
-            class="redirect-uri">
+        Ensuite quand l'app est créée assurez vous que le <strong>Redirect URI</strong> est bien:
+        <div class="redirect-uri">
             <code>{{ callbackUri }}</code>
             <p-button icon="pi pi-copy" rounded="true" text="true" severity="secondary"
                 (click)="copyRedirectUri()"></p-button>
@@ -87,10 +87,22 @@
         @if (loadingPlaylists()) {
         <p-progress-spinner ariaLabel="loading" />
         } @else if (filteredPlaylists() && filteredPlaylists()!.length) {
-        <div class="playlists">
-            @for (playlist of filteredPlaylists()!; track $index) {
-            <p-tag [severity]="isSynced(playlist.id) ? null : 'secondary'" [value]="playlist.title"
-                (click)="togglePlaylistSync(playlist)" />
+        <div class="playlists-grid">
+            @for (playlist of filteredPlaylists()!; track playlist.id) {
+            <button type="button" class="playlist-item" [class.synced]="isSynced(playlist.id)"
+                (click)="togglePlaylistSync(playlist)" [attr.aria-pressed]="isSynced(playlist.id)">
+
+                <img class="artwork" [src]="getPlaylistArtworkUrl(playlist)" loading="lazy"
+                    (error)="onPlaylistImgError($event)" />
+
+                <div class="meta">
+                    <div class="title" [title]="playlist.title">{{ playlist.title }}</div>
+                    <div class="status">
+                        <i class="pi" [ngClass]="isSynced(playlist.id) ? 'pi-check' : 'pi-circle'"></i>
+                        <span>{{ isSynced(playlist.id) ? 'Synchronisée' : 'Non synchronisée' }}</span>
+                    </div>
+                </div>
+            </button>
             }
         </div>
         } @else if (filteredPlaylists() && filteredPlaylists()!.length === 0) {

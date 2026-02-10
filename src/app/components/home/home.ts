@@ -16,13 +16,13 @@ import { SyncService } from '../../services/sync.service';
 import { open } from '@tauri-apps/plugin-dialog';
 import { ProgressBarModule } from 'primeng/progressbar';
 import { SyncProgress } from '../../models/sync.model';
-import { AsyncPipe } from '@angular/common';
+import { AsyncPipe, NgClass } from '@angular/common';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { Clipboard } from '@angular/cdk/clipboard';
 
 @Component({
   selector: 'app-home',
-  imports: [FloatLabelModule, InputTextModule, ButtonModule, ReactiveFormsModule, TooltipModule, ProgressSpinnerModule, AvatarModule, TagModule, FormsModule, ProgressBarModule, AsyncPipe],
+  imports: [FloatLabelModule, InputTextModule, ButtonModule, ReactiveFormsModule, TooltipModule, ProgressSpinnerModule, AvatarModule, TagModule, FormsModule, ProgressBarModule, AsyncPipe, NgClass],
   templateUrl: './home.html',
   styleUrl: './home.scss',
 })
@@ -112,6 +112,11 @@ export class Home {
 
   public isSynced(id: string | number): boolean {
     return this.syncedPlaylists().has(String(id));
+  }
+
+  public onPlaylistImgError(ev: Event) {
+    const img = ev.target as HTMLImageElement;
+    img.src = 'not-found.png';
   }
 
   public async togglePlaylistSync(

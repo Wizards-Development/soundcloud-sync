@@ -13,8 +13,8 @@
     "windows": [
       {
         "title": "soundcloud-sync",
-        "width": 800,
-        "height": 600,
+        "width": 1300,
+        "height": 620,
         "resizable": true,
         "fullscreen": false
       }
