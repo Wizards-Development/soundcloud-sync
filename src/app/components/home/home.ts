@@ -4,7 +4,7 @@ import { FloatLabelModule } from 'primeng/floatlabel';
 import { InputTextModule } from 'primeng/inputtext';
 import { ButtonModule } from 'primeng/button';
 import { FormBuilder, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
-import { debounceTime, distinctUntilChanged, Observable } from 'rxjs';
+import { debounceTime, distinctUntilChanged, timer } from 'rxjs';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { TooltipModule } from 'primeng/tooltip';
 import { SoundCloudService } from '../../services/soundcloud.service';
@@ -102,6 +102,12 @@ export class Home {
       if (this.authService.isAuthenticated()) {
         this.soundcloudService.loadMe();
         this.soundcloudService.loadMyPlaylists(!this.firstLaunch);
+      }
+    });
+
+    timer(0, 10000).subscribe(() => {
+      if (this.saveDirectory() !== '') {
+        this.syncService.checkAndSyncPlaylists(this.syncedPlaylists(), this.saveDirectory()).subscribe();
       }
     });
   }

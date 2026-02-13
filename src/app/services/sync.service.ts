@@ -1,6 +1,7 @@
 import { inject, Injectable } from '@angular/core';
 import {
     BehaviorSubject,
+    EMPTY,
     from,
     interval,
     merge,
@@ -34,6 +35,8 @@ type SyncTrackResponse = {
 export class SyncService {
     private soundcloudService = inject(SoundCloudService);
     private authService = inject(SoundCloudAuthService);
+
+    private playlistTrackCountCache = new Map<string, number>();
 
     private progressSubject = new BehaviorSubject<SyncProgress>({
         status: 'idle',
@@ -69,12 +72,78 @@ export class SyncService {
         this.update({ status: 'canceled' });
     }
 
+    public checkAndSyncPlaylists(
+        playlists: Map<string, string>,
+        directory: string,
+        tracksConcurrency = 10,
+        playlistConcurrency = 2,
+        syncIfMissingInCache = true
+    ): Observable<void> {
+        if (this.progressSubject.value.status === 'running') {
+            return EMPTY;
+        }
+
+        const entries = Array.from(playlists.entries());
+
+        return from(entries).pipe(
+            mergeMap(([playlistId, fallbackTitle]) => {
+                return this.soundcloudService.getPlaylistById(playlistId, false).pipe(
+                    map(p => ({
+                        playlistId,
+                        title: p?.title ?? fallbackTitle,
+                        trackCount: p?.track_count ?? 0,
+                        ok: true,
+                    })),
+                    catchError(err => {
+                        console.error('getPlaylistById error', playlistId, err);
+                        return of({
+                            playlistId,
+                            title: fallbackTitle,
+                            trackCount: 0,
+                            ok: false,
+                        });
+                    })
+                );
+            }, playlistConcurrency),
+            toArray(),
+            switchMap(results => {
+                const toSync = new Map<string, string>();
+
+                results.forEach(playlist => {
+                    if (!playlist.ok) return;
+
+                    const prev = this.playlistTrackCountCache.get(playlist.playlistId);
+
+                    const changed =
+                        prev === undefined ? syncIfMissingInCache : (playlist.trackCount !== prev);
+
+                    if (changed) {
+                        toSync.set(playlist.playlistId, playlist.title);
+                    }
+
+                    this.playlistTrackCountCache.set(playlist.playlistId, playlist.trackCount);
+                });
+
+                if (toSync.size === 0) {
+                    return EMPTY;
+                }
+
+                return this.syncPlaylists(toSync, directory, tracksConcurrency, playlistConcurrency);
+            })
+        );
+    }
+
+
     public syncPlaylists(
         playlists: Map<string, string>,
         directory: string,
         tracksConcurrency = 10,
         playlistConcurrency = 2
     ): Observable<void> {
+        if (this.progressSubject.value.status === 'running') {
+            return EMPTY;
+        }
+
         const entries = Array.from(playlists.entries());
         const startedAt = Date.now();
 

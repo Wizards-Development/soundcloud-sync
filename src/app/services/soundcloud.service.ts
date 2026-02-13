@@ -63,6 +63,22 @@ export class SoundCloudService {
         });
     }
 
+    public getPlaylistById(id: string, withTrack: boolean): Observable<SoundCloudPlaylist | null> {
+        return this.http.get<SoundCloudPlaylist>(`${this.apiBase}/playlists/${id}?show_tracks=${withTrack}`, { headers: this.getHeaders() }).pipe(
+            tap(result => {
+                if (result !== null) {
+                    this.auth.isAuthenticated.set(true);
+                }
+            }),
+            catchError(err => {
+                if (err.status === 401 || err.status === 403) {
+                    this.auth.isAuthenticated.set(false)
+                }
+                return of(null);
+            })
+        );
+    }
+
     public getPlaylistsTracks(id: string): Observable<SoundCloudTrack[] | null> {
         return this.http.get<SoundCloudTrack[]>(`${this.apiBase}/playlists/${id}/tracks`, { headers: this.getHeaders() }).pipe(
             tap(result => {
