@@ -1,15 +1,15 @@
 use futures_util::StreamExt;
+use image::codecs::jpeg::JpegEncoder;
+use image::imageops::FilterType;
+use image::GenericImageView;
+use lofty::config::WriteOptions;
+use lofty::file::TaggedFileExt;
+use lofty::picture::{ Picture, PictureType };
+use lofty::tag::{ Accessor, ItemKey, ItemValue, Tag, TagExt, TagItem, TagType };
 use serde::{ Deserialize, Serialize };
+use std::io::Cursor;
 use std::path::Path;
 use tokio::io::AsyncWriteExt;
-use lofty::picture::{ Picture, PictureType };
-use lofty::tag::{ Accessor, Tag, TagExt, TagType, ItemKey, ItemValue, TagItem };
-use lofty::file::TaggedFileExt;
-use lofty::config::WriteOptions;
-use std::io::Cursor;
-use image::imageops::FilterType;
-use image::codecs::jpeg::JpegEncoder;
-use image::GenericImageView;
 
 type AnyError = Box<dyn std::error::Error + Send + Sync + 'static>;
 
@@ -289,13 +289,13 @@ async fn sync_track(req: SyncTrackRequest) -> Result<SyncTrackResponse, String> 
   }
 
   /*   let downloadable = req.track.downloadable.unwrap_or(false);
-  if downloadable {
-    if let Some(url) = req.track.download_url.as_deref() {
-      fetch_to_file_atomic(url, &path, &req.token).await.map_err(|e| e.to_string())?;
-      return Ok(resp("downloaded", &path, None));
-    }
-  } */
- 
+    if downloadable {
+      if let Some(url) = req.track.download_url.as_deref() {
+        fetch_to_file_atomic(url, &path, &req.token).await.map_err(|e| e.to_string())?;
+        return Ok(resp("downloaded", &path, None));
+      }
+    } */
+
   let streamable = req.track.streamable.unwrap_or(false);
   if streamable {
     let mut mp3_url = req.track.http_mp3_128_url.clone();
@@ -348,15 +348,19 @@ pub fn run() {
     .plugin(tauri_plugin_updater::Builder::new().build())
     .plugin(tauri_plugin_opener::init())
     .plugin(tauri_plugin_dialog::init())
+    .plugin(
+      tauri_plugin_log::Builder
+        ::new()
+        .target(
+          tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir {
+            file_name: Some("logs".to_string()),
+          })
+        )
+        .level(log::LevelFilter::Info)
+        .build()
+    )
     .invoke_handler(tauri::generate_handler![sync_track])
-    .setup(|app| {
-      if cfg!(debug_assertions) {
-        app
-          .handle()
-          .plugin(tauri_plugin_log::Builder::default().level(log::LevelFilter::Info).build())?;
-      }
-      Ok(())
-    })
+    .setup(|_app| { Ok(()) })
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
 }
