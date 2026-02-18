@@ -15,7 +15,7 @@
     <small class="credentials-hint">
         Vous pouvez obtenir votre <strong>Client ID</strong> et <strong>Client Secret</strong> en vous rendant sur
         <a [href]="soundcloudAppsUrl" (click)="$event.preventDefault(); openSoundcloudApps()">
-            {{soundcloudAppsUrl}}
+            {{ soundcloudAppsUrl }}
         </a>
         dans votre navigateur. <br>
         Si vous n'avez pas d'app enregistrée cliquez sur <strong>Sign up for a new app</strong> comme nom et
@@ -113,7 +113,7 @@
     @if (isAuthenticated() && user(); as user) {
     <div class="user-details">
         <span>
-            Coucou {{user.username}} 👋
+            Coucou {{ user.username }} 👋
         </span>
         @if (user.avatar_url) {
         <p-avatar [image]="user.avatar_url" class="mr-2" size="xlarge" shape="circle" />
