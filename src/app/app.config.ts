@@ -1,4 +1,4 @@
-import { ApplicationConfig, provideBrowserGlobalErrorListeners } from '@angular/core';
+import { ApplicationConfig, ErrorHandler, provideBrowserGlobalErrorListeners } from '@angular/core';
 import { provideRouter } from '@angular/router';
 import { routes } from './app.routes';
 import { providePrimeNG } from 'primeng/config';
@@ -6,6 +6,7 @@ import Aura from '@primeuix/themes/aura';
 import { definePreset } from '@primeuix/themes';
 import { HTTP_INTERCEPTORS, provideHttpClient, withInterceptorsFromDi } from '@angular/common/http';
 import { AuthInterceptor } from './interceptors/auth.interceptor';
+import { GlobalErrorHandler } from './services/global-error-handler';
 
 const Indigo = definePreset(Aura, {
   semantic: {
@@ -35,6 +36,7 @@ export const appConfig: ApplicationConfig = {
       theme: {
         preset: Indigo
       }
-    })
+    }),
+    { provide: ErrorHandler, useClass: GlobalErrorHandler },
   ]
 };
