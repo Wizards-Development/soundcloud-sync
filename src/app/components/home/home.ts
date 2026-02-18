@@ -19,6 +19,7 @@ import { SyncProgress } from '../../models/sync.model';
 import { AsyncPipe, NgClass } from '@angular/common';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { Clipboard } from '@angular/cdk/clipboard';
+import { info } from '@tauri-apps/plugin-log';
 
 @Component({
   selector: 'app-home',
@@ -142,6 +143,7 @@ export class Home {
   }
 
   public syncPlaylists(): void {
+    info(`Home.syncPlaylists: launching manual sync for ${this.syncedPlaylists().size} playlists directory=${this.saveDirectory()}`);
     this.syncService.syncPlaylists(this.syncedPlaylists(), this.saveDirectory()).subscribe();
   }
 

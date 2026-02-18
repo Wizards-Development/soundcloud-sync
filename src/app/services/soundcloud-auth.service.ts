@@ -5,6 +5,7 @@ import { Router } from '@angular/router';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { onOpenUrl } from '@tauri-apps/plugin-deep-link';
 import { firstValueFrom } from 'rxjs';
+import { info, error } from '@tauri-apps/plugin-log';
 
 @Injectable({ providedIn: 'root' })
 export class SoundCloudAuthService {
@@ -106,6 +107,8 @@ export class SoundCloudAuthService {
     }
 
     async login(): Promise<void> {
+        info(`SoundCloudAuthService.login: starting OAuth flow clientIdExists=${!!this.clientId}`);
+
         const state = randomString(16);
         const codeVerifier = randomString(64);
         const codeChallenge = await sha256Base64Url(codeVerifier);
@@ -118,6 +121,7 @@ export class SoundCloudAuthService {
 
     public token(code: string, state: string): void {
         if (!code || !state || state !== this.state || !this.codeVerifier) {
+            error(`SoundCloudAuthService.token: token exchange failed (invalid callback/state)`);
             this.router.navigateByUrl('/home');
             alert('Erreur OAuth');
             return;
@@ -148,6 +152,8 @@ export class SoundCloudAuthService {
                     try { sessionStorage.removeItem(this.SC_CODE_VERIFIER); } catch { }
                     try { sessionStorage.removeItem(this.SC_STATE); } catch { }
 
+                    info(`SoundCloudAuthService.token: success, expiresAt=${this.expiresAt}`);
+
                     this.router.navigateByUrl('/home');
                 },
                 error: (err) => {
@@ -161,6 +167,7 @@ export class SoundCloudAuthService {
 
 
     public async refresh(): Promise<boolean> {
+        info('SoundCloudAuthService.refresh: attempting token refresh');
         if (this.refreshingPromise) return this.refreshingPromise;
 
         if (!this.refreshToken) {
@@ -186,6 +193,7 @@ export class SoundCloudAuthService {
                 return true;
             } catch (err) {
                 console.error('Refresh token failed', err);
+                error(`SoundCloudAuthService.refresh: Refresh token failed: ${(err as any)?.message ?? err}`);
                 this.clearTokens();
                 this.isAuthenticated.set(false);
                 this.refreshingPromise = null;

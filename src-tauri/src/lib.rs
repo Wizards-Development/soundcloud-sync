@@ -10,6 +10,7 @@ use serde::{ Deserialize, Serialize };
 use std::io::Cursor;
 use std::path::Path;
 use tokio::io::AsyncWriteExt;
+use log::{info, warn, error, debug};
 
 type AnyError = Box<dyn std::error::Error + Send + Sync + 'static>;
 
@@ -125,6 +126,8 @@ async fn write_response_to_temp_then_rename(
     written += data.len() as u64;
   }
 
+  debug!("write_response_to_temp_then_rename: written={} bytes to tmp_path={}", written, tmp_path);
+
   file.flush().await?;
   file.sync_all().await?;
   drop(file);
@@ -132,6 +135,7 @@ async fn write_response_to_temp_then_rename(
   if let Some(exp) = expected_len {
     if written != exp {
       remove_if_exists(&tmp_path).await;
+      error!("download incomplete: written={} expected={} destination={}", written, exp, destination_path);
       return Err(
         format!("Téléchargement incomplet: écrit {} octets, attendu {} octets", written, exp).into()
       );
@@ -147,10 +151,13 @@ async fn fetch_to_file_atomic(
   destination_path: &str,
   token: &str
 ) -> Result<(), AnyError> {
+  info!("fetch_to_file_atomic: downloading {} -> {}", url, destination_path);
+
   let client = reqwest::Client::new();
   let response = client.get(url).header("Authorization", token).send().await?;
 
   if !response.status().is_success() {
+    error!("fetch_to_file_atomic HTTP error {} for {}", response.status(), url);
     return Err(format!("Erreur HTTP: {}", response.status()).into());
   }
 
@@ -197,6 +204,7 @@ async fn tag_mp3_after_success(
   label: Option<&str>,
   genre: Option<&str>
 ) -> Result<(), AnyError> {
+  info!("tag_mp3_after_success: tagging file={} artist={:?}", path, artist);
   let mut tag = match lofty::read_from_path(path) {
     Ok(tf) =>
       tf
@@ -257,10 +265,12 @@ async fn fetch_track_stream(
     res.status() == reqwest::StatusCode::UNAUTHORIZED ||
     res.status() == reqwest::StatusCode::FORBIDDEN
   {
+    warn!("fetch_track_stream: unauthorized/forbidden for track_id={}", track_id);
     return Ok(None);
   }
 
   if !res.status().is_success() {
+    error!("fetch_track_stream: HTTP error {} for {}", res.status(), url);
     return Err(format!("streams endpoint HTTP error: {}", res.status()).into());
   }
 
@@ -275,6 +285,7 @@ async fn fetch_track_stream(
 
 #[tauri::command]
 async fn sync_track(req: SyncTrackRequest) -> Result<SyncTrackResponse, String> {
+  info!("sync_track request: id={} title={:?} playlist={}", req.track.id, req.track.title.as_deref().unwrap_or(""), req.playlist_title);
   let title = req.track.title.clone().unwrap_or_else(|| format!("track-{}", req.track.id));
 
   let safe_title = sanitize_filename(&title);
@@ -285,6 +296,7 @@ async fn sync_track(req: SyncTrackRequest) -> Result<SyncTrackResponse, String> 
   cleanup_part_for(&path).await;
 
   if track_exists(path.clone()).await {
+    info!("sync_track: skipped already_exists path={}", path);
     return Ok(resp("skipped", &path, Some("already_exists")));
   }
 
@@ -301,6 +313,7 @@ async fn sync_track(req: SyncTrackRequest) -> Result<SyncTrackResponse, String> 
     let mut mp3_url = req.track.http_mp3_128_url.clone();
 
     if mp3_url.as_deref().unwrap_or("").is_empty() {
+      info!("resolving stream url for track id={} title={}", req.track.id, title);
       match fetch_track_stream(&req.api_base, req.track.id, &req.token).await {
         Ok(Some(stream)) => {
           mp3_url = stream.http_mp3_128_url;

@@ -24,6 +24,7 @@ import { SoundCloudService } from './soundcloud.service';
 import { SoundCloudAuthService } from './soundcloud-auth.service';
 import { SoundCloudTrack } from '../models/soundcloud.model';
 import { SyncProgress, SyncStatus } from '../models/sync.model';
+import { debug, info, error } from '@tauri-apps/plugin-log';
 
 type SyncTrackResponse = {
     action: 'skipped' | 'downloaded' | 'streamed' | 'unsupported' | 'error';
@@ -85,6 +86,8 @@ export class SyncService {
 
         const entries = Array.from(playlists.entries());
 
+        info(`SyncService.checkAndSyncPlaylists: ${entries.length} playlists, directory=${directory}`);
+
         return from(entries).pipe(
             mergeMap(([playlistId, fallbackTitle]) => {
                 return this.soundcloudService.getPlaylistById(playlistId, false).pipe(
@@ -96,6 +99,7 @@ export class SyncService {
                     })),
                     catchError(err => {
                         console.error('getPlaylistById error', playlistId, err);
+                        error(`SyncService.checkAndSyncPlaylists: getPlaylistById error playlistId=${playlistId} err=${err?.message ?? err}`);
                         return of({
                             playlistId,
                             title: fallbackTitle,
@@ -190,6 +194,7 @@ export class SyncService {
                     map(tracks => ({ playlistTitle, tracks: tracks ?? [] })),
                     catchError(err => {
                         console.error('getPlaylistsTracks error', playlistId, err);
+                        error(`SyncService.syncPlaylists: getPlaylistsTracks error playlistId=${playlistId} err=${err?.message ?? err}`);
                         return of({ playlistTitle, tracks: [] as SoundCloudTrack[] });
                     })
                 );
@@ -228,6 +233,7 @@ export class SyncService {
             }),
             catchError(err => {
                 console.error('syncPlaylists fatal error', err);
+                error(`SyncService.syncPlaylists: syncPlaylists fatal error err=${err?.message ?? err}`);
                 this.update({ status: 'error' });
                 return throwError(() => err);
             })
@@ -273,6 +279,8 @@ export class SyncService {
         const remaining = Math.max(0, (cur.total || 0) - processed);
         const etaMs = rate > 0 ? Math.round((remaining / rate) * 1000) : undefined;
 
+        debug(`SyncService.onTrackResult: progress: processed=${processed} downloaded=${downloaded} streamed=${streamed} skipped=${skipped} errors=${errors}`);
+
         this.update({
             processed,
             downloaded,
@@ -295,6 +303,7 @@ export class SyncService {
     }
 
     private syncOneTrack(track: SoundCloudTrack, playlistTitle: string, directory: string) {
+        debug(`SyncService.syncOneTrack: invoking sync_track id=${track.id} title="${track.title ?? 'unknown'}" playlist="${playlistTitle}"`);
         return from(
             invoke<SyncTrackResponse>('sync_track', {
                 req: {
@@ -308,6 +317,7 @@ export class SyncService {
         ).pipe(
             catchError(err => {
                 console.error(`✗ ${track.title}`, err);
+                error(`SyncService.syncOneTrack: ${track.title} invoke failed id=${track.id} err=${err?.message ?? err}`);
                 return of({
                     action: 'error',
                     path: '',
