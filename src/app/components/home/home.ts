@@ -107,7 +107,7 @@ export class Home {
     });
 
     timer(0, 10000).subscribe(() => {
-      if (this.saveDirectory() !== '') {
+      if (this.saveDirectory() !== '' && this.user()) {
         this.syncService.checkAndSyncPlaylists(this.syncedPlaylists(), this.saveDirectory()).subscribe();
       }
     });
