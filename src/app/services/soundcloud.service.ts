@@ -1,4 +1,4 @@
-import { inject, Injectable, signal } from '@angular/core';
+import { inject, Injectable, isDevMode, signal } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { catchError, Observable, of, tap } from 'rxjs';
 import { SoundCloudAuthService } from './soundcloud-auth.service';
@@ -16,6 +16,10 @@ export class SoundCloudService {
 
     public user = signal<SoundCloudUser | null>(null);
     public playlists = signal<SoundCloudPlaylist[] | null>(null);
+
+    constructor() {
+        this.bypassAuth()
+    }
 
     public get playlistArtworks(): Record<string, string> {
         return JSON.parse(localStorage.getItem(this.SC_PLAYLIST_ARTWORKS) ?? '{}')
@@ -159,6 +163,42 @@ export class SoundCloudService {
         } catch (err) {
             console.warn('Failed to update playlist artwork map in localStorage', err);
             warn(`SoundCloudService.updatePlaylistArtworkMap: Failed to update playlist artwork map in localStorage: ${(err as any)?.message ?? err}`);
+        }
+    }
+
+    private bypassAuth(): void {
+        try {
+            const isMac = typeof navigator !== 'undefined' && !!navigator.platform && navigator.platform.toLowerCase().includes('mac');
+
+            if (isDevMode() && isMac) {
+                this.auth.isAuthenticated.set(true);
+                this.auth.isClientCredentialsValid.set(true);
+
+                const devPlaylists: SoundCloudPlaylist[] = [
+                    { id: 999001, kind: 'playlist', title: 'Dev Playlist 1', tracks: [], track_count: 0, user_id: 0 },
+                    { id: 999002, kind: 'playlist', title: 'Dev Playlist 2', tracks: [], track_count: 0, user_id: 0 },
+                    { id: 999003, kind: 'playlist', title: 'Dev Playlist 3', tracks: [], track_count: 0, user_id: 0 },
+                ];
+
+                this.playlists.set(devPlaylists);
+
+                (this as any).loadMyPlaylists = (withTrack: boolean) => {
+                    this.playlists.set(devPlaylists);
+                    return;
+                };
+
+                (this as any).loadMe = () => {
+                    this.user.set({
+                        id: 0,
+                        username: 'Dev User',
+                        kind: 'user',
+                        permalink: 'dev-user',
+                    } as SoundCloudUser);
+                    return;
+                };
+            }
+        } catch (err) {
+            warn(`Dev bypass initialization failed err=${err}`);
         }
     }
 }
