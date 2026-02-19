@@ -68,7 +68,7 @@ export class Home {
   public constructor() {
     if (this.isClientCredentialsValid()) {
       this.soundcloudService.loadMe();
-      this.soundcloudService.loadMyPlaylists(!this.firstLaunch);
+      this.soundcloudService.loadAllMyPlaylists(!this.firstLaunch);
 
       const raw = localStorage.getItem(this.SYNCED_PLAYLISTS);
       if (raw) {
@@ -102,7 +102,7 @@ export class Home {
     effect(() => {
       if (this.authService.isAuthenticated()) {
         this.soundcloudService.loadMe();
-        this.soundcloudService.loadMyPlaylists(!this.firstLaunch);
+        this.soundcloudService.loadAllMyPlaylists(!this.firstLaunch);
       }
     });
 
@@ -145,6 +145,10 @@ export class Home {
   public syncPlaylists(): void {
     info(`Home.syncPlaylists: launching manual sync for ${this.syncedPlaylists().size} playlists directory=${this.saveDirectory()}`);
     this.syncService.syncPlaylists(this.syncedPlaylists(), this.saveDirectory()).subscribe();
+  }
+
+  public cancelSync(): void {
+    this.syncService.cancel();
   }
 
   public async selectDirctory(): Promise<void> {

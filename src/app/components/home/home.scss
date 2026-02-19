@@ -175,6 +175,20 @@
             flex-direction: column;
         }
 
+        .progress-header {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .flex-1 {
+            flex: 1;
+        }
+
+        .close-btn {
+            flex-shrink: 0;
+        }
+
         .sync-line {
             display: flex;
             flex-wrap: wrap;

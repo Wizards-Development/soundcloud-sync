@@ -60,7 +60,13 @@
         @if (progress$ | async; as p) {
         @if (p.status !== 'idle') {
         <div class="card">
-            <p-progressBar [value]="getProgressPercent(p)" [showValue]="true"></p-progressBar>
+            <div class="progress-header">
+                <p-progressBar [value]="getProgressPercent(p)" [showValue]="true" class="flex-1">
+                </p-progressBar>
+                <button pButton type="button" icon="pi pi-times"
+                    class="p-button-rounded p-button-text p-button-danger close-btn" (click)="cancelSync()">
+                </button>
+            </div>
             <div class="sync-line mt-2">
                 <span class="progress">
                     {{ p.processed }}/{{ p.total }}
@@ -79,7 +85,6 @@
                 <span class="sep">•</span>
                 <span>{{ formatElapsed(p.elapsedMs) }}</span>
             </div>
-
         </div>
         }
         }

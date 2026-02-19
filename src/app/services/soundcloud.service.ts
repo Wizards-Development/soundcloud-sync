@@ -1,6 +1,6 @@
 import { inject, Injectable, isDevMode, signal } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
-import { catchError, Observable, of, tap } from 'rxjs';
+import { catchError, forkJoin, Observable, of, tap } from 'rxjs';
 import { SoundCloudAuthService } from './soundcloud-auth.service';
 import { SoundCloudPlaylist, SoundCloudTrack, SoundCloudUser, Stream } from '../models/soundcloud.model';
 import { debug, error, info, warn } from '@tauri-apps/plugin-log';
@@ -49,18 +49,42 @@ export class SoundCloudService {
         });
     }
 
-    public loadMyPlaylists(withTrack: boolean): void {
-        info(`SoundCloudService.loadMyPlaylists: starting withTrack=${withTrack}`);
-        this.http.get<SoundCloudPlaylist[]>(`${this.apiBase}/me/playlists?show_tracks=${withTrack}`, { headers: this.getHeaders() }).subscribe({
-            next: (res) => {
-                this.playlists.set(res);
+    public loadAllMyPlaylists(withTrack: boolean): void {
+        info(`SoundCloudService.loadAllMyPlaylists: starting withTrack=${withTrack}`);
+
+        forkJoin({
+            myPlaylists: this.http.get<SoundCloudPlaylist[]>(
+                `${this.apiBase}/me/playlists?show_tracks=${withTrack}`,
+                { headers: this.getHeaders() }
+            ),
+            likedPlaylists: this.http.get<SoundCloudPlaylist[]>(
+                `${this.apiBase}/me/likes/playlists`,
+                { headers: this.getHeaders() }
+            )
+        }).subscribe({
+            next: ({ myPlaylists, likedPlaylists }) => {
+
+                const merged = [
+                    ...(myPlaylists ?? []),
+                    ...(likedPlaylists ?? [])
+                ];
+
+                this.playlists.set(merged);
                 this.auth.isAuthenticated.set(true);
 
-                info(`SoundCloudService.loadMyPlaylists: success playlists=${res?.length ?? 0}`);
-                if (withTrack && res) {
-                    res.forEach(playlist => {
-                        if (playlist?.id && Array.isArray(playlist.tracks) && !playlist.artwork_url) {
-                            this.updatePlaylistArtworkMap(String(playlist.id), playlist.tracks);
+                info(`SoundCloudService.loadAllMyPlaylists: success playlists=${merged.length}`);
+
+                if (withTrack) {
+                    merged.forEach(playlist => {
+                        if (
+                            playlist?.id &&
+                            Array.isArray(playlist.tracks) &&
+                            !playlist.artwork_url
+                        ) {
+                            this.updatePlaylistArtworkMap(
+                                String(playlist.id),
+                                playlist.tracks
+                            );
                         }
                     });
                 }
@@ -69,7 +93,7 @@ export class SoundCloudService {
                 if (err.status === 401 || err.status === 403) {
                     this.auth.isAuthenticated.set(false);
                 }
-                error(`SoundCloudService.loadMyPlaylists: failed status=${err?.status ?? 'unknown'} message=${err?.message ?? err}`);
+                error(`SoundCloudService.loadAllMyPlaylists: failed status=${err?.status ?? 'unknown'}`);
                 this.playlists.set(null);
             }
         });

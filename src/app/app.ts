@@ -3,6 +3,7 @@ import { RouterOutlet } from '@angular/router';
 import { check } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
 import pkg from '../../package.json';
+import { info } from '@tauri-apps/plugin-log';
 
 @Component({
   selector: 'app-root',
@@ -24,7 +25,7 @@ export class App {
     if (!update) return;
 
     await update.downloadAndInstall((event) => {
-      console.log(event);
+      info(`App.aitoUpdate: downloading update event=${event}`)
     });
 
     await relaunch();

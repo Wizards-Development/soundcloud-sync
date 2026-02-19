@@ -80,7 +80,7 @@ export class SyncService {
         playlistConcurrency = 2,
         syncIfMissingInCache = true
     ): Observable<void> {
-        if (this.progressSubject.value.status === 'running') {
+        if (this.progressSubject.value.status !== 'idle') {
             return EMPTY;
         }
 
