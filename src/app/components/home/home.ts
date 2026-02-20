@@ -4,8 +4,8 @@ import { FloatLabelModule } from 'primeng/floatlabel';
 import { InputTextModule } from 'primeng/inputtext';
 import { ButtonModule } from 'primeng/button';
 import { FormBuilder, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
-import { debounceTime, distinctUntilChanged, timer } from 'rxjs';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { debounceTime, distinctUntilChanged, EMPTY, filter, switchMap, timer } from 'rxjs';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { TooltipModule } from 'primeng/tooltip';
 import { SoundCloudService } from '../../services/soundcloud.service';
 import { ProgressSpinnerModule } from 'primeng/progressspinner';
@@ -20,10 +20,11 @@ import { AsyncPipe, NgClass } from '@angular/common';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { Clipboard } from '@angular/cdk/clipboard';
 import { info } from '@tauri-apps/plugin-log';
+import { ToggleSwitchModule } from 'primeng/toggleswitch';
 
 @Component({
   selector: 'app-home',
-  imports: [FloatLabelModule, InputTextModule, ButtonModule, ReactiveFormsModule, TooltipModule, ProgressSpinnerModule, AvatarModule, TagModule, FormsModule, ProgressBarModule, AsyncPipe, NgClass],
+  imports: [FloatLabelModule, ToggleSwitchModule, InputTextModule, ButtonModule, ReactiveFormsModule, TooltipModule, ProgressSpinnerModule, AvatarModule, TagModule, FormsModule, ProgressBarModule, AsyncPipe, NgClass],
   templateUrl: './home.html',
   styleUrl: './home.scss',
 })
@@ -36,6 +37,7 @@ export class Home {
 
   private readonly SYNCED_PLAYLISTS = 'synced_playlists';
   private readonly SAVE_DIRECTORY = 'save_directory';
+  private readonly AUTO_SYNC = 'auto_sync';
 
   public isClientCredentialsValid = this.authService.isClientCredentialsValid;
   public playlists = this.soundcloudService.playlists;
@@ -46,6 +48,7 @@ export class Home {
   public readonly soundcloudAppsUrl = 'https://soundcloud.com/you/apps';
   public readonly callbackUri = this.authService.redirectUri;
   public readonly playlistQuery = signal('');
+  public autoSyncEnabled = signal(localStorage.getItem(this.AUTO_SYNC) === 'true');
   public readonly filteredPlaylists = computed(() => {
     const list = this.playlists();
     if (!list) return list;
@@ -95,7 +98,6 @@ export class Home {
     effect(() => {
       const entries = Array.from(this.syncedPlaylists().entries());
       localStorage.setItem(this.SYNCED_PLAYLISTS, JSON.stringify(entries));
-
       localStorage.setItem(this.SAVE_DIRECTORY, this.saveDirectory() ?? '');
     });
 
@@ -106,11 +108,23 @@ export class Home {
       }
     });
 
-    timer(0, 10000).subscribe(() => {
-      if (this.saveDirectory() !== '' && this.user()) {
-        this.syncService.checkAndSyncPlaylists(this.syncedPlaylists(), this.saveDirectory()).subscribe();
-      }
-    });
+    toObservable(this.autoSyncEnabled)
+      .pipe(
+        switchMap((enabled) => enabled ? timer(0, 10_000) : EMPTY),
+        filter(() => this.saveDirectory() !== '' && !!this.user()),
+        takeUntilDestroyed()
+      )
+      .subscribe(() => {
+        this.syncService
+          .checkAndSyncPlaylists(this.syncedPlaylists(), this.saveDirectory())
+          .subscribe();
+      });
+  }
+
+  public autoSync(enabled: boolean): void {
+    console.log(enabled)
+    this.autoSyncEnabled.set(enabled);
+    localStorage.setItem(this.AUTO_SYNC, enabled.toString());
   }
 
   public login(): void {

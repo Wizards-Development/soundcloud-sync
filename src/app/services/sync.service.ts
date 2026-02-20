@@ -84,6 +84,7 @@ export class SyncService {
                 debug('SyncService.taskFinished: all tasks finished after cancel -> set canceled and clear stopRequested');
                 this.setStatus('canceled');
                 this.stopRequested = false;
+                this.resetProgress();
             } else {
                 debug(`SyncService.taskFinished: still ${this.activeCount} active tasks after cancel`);
             }
@@ -92,7 +93,7 @@ export class SyncService {
         }
     }
 
-    public resetProgress() {
+    private resetProgress() {
         this.progressSubject.next({
             status: 'idle',
             total: 0,
@@ -107,6 +108,8 @@ export class SyncService {
 
     public cancel() {
         if (this.progressSubject.value.status === 'idle') return;
+
+        info("SyncService.cancel: cancel requested")
 
         this.stopRequested = true;
         this.setStatus('canceled');

@@ -37,8 +37,11 @@
     @if (isAuthenticated()) {
     <div class="playlists">
         <h3>Mes playlists</h3>
-        <button class="sync-playlists" pButton label="Synchroniser" (click)="syncPlaylists()"
-            [disabled]="saveDirectory() === ''"></button>
+        <div class="sync-actions">
+            <button class="sync-playlists" pButton label="Synchroniser" (click)="syncPlaylists()"
+                [disabled]="saveDirectory() === ''"></button>
+            <p>Auto-sync :</p><p-toggleswitch [ngModel]="autoSyncEnabled()" (ngModelChange)="autoSync($event)" />
+        </div>
 
         <div class="directory-selector">
             <p-floatlabel variant="on">

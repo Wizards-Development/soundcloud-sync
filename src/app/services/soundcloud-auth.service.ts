@@ -87,7 +87,7 @@ export class SoundCloudAuthService {
     }
 
     public get firstLaunch(): boolean {
-        return !!localStorage.getItem(this.FIRST_LAUNCH);
+        return localStorage.getItem(this.FIRST_LAUNCH) === 'true';
     }
 
     private set firstLaunch(value: boolean) {

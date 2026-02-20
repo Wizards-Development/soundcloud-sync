@@ -56,7 +56,12 @@
                 font-weight: 600;
             }
 
-            .sync-playlists {
+            .sync-actions {
+                display: flex;
+                gap: 12px;
+                align-items: center;
+                flex-wrap: wrap;
+                margin-bottom: 16px;
                 margin-bottom: 16px;
             }
 
