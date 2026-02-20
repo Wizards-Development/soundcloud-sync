@@ -52,8 +52,44 @@ export class SyncService {
 
     public progress$ = this.progressSubject.asObservable();
 
+    private stopRequested = false;
+    private activeCount = 0;
+
     private update(patch: Partial<SyncProgress>) {
         this.progressSubject.next({ ...this.progressSubject.value, ...patch });
+    }
+
+    private setStatus(status: SyncStatus) {
+        if (status === 'running' && this.stopRequested) {
+            debug('SyncService.setStatus: ignored setting running because stopRequested=true');
+            return;
+        }
+        this.update({ status });
+    }
+
+    private taskStarted() {
+        this.activeCount++;
+        if (!this.stopRequested) {
+            this.setStatus('running');
+        } else {
+            debug('SyncService.taskStarted: start ignored due to stopRequested');
+        }
+    }
+
+    private taskFinished() {
+        if (this.activeCount > 0) this.activeCount--;
+
+        if (this.stopRequested) {
+            if (this.activeCount === 0) {
+                debug('SyncService.taskFinished: all tasks finished after cancel -> set canceled and clear stopRequested');
+                this.setStatus('canceled');
+                this.stopRequested = false;
+            } else {
+                debug(`SyncService.taskFinished: still ${this.activeCount} active tasks after cancel`);
+            }
+        } else {
+            debug(`SyncService.taskFinished: ${this.activeCount} remaining tasks`);
+        }
     }
 
     public resetProgress() {
@@ -70,7 +106,12 @@ export class SyncService {
     }
 
     public cancel() {
-        this.update({ status: 'canceled' });
+        if (this.progressSubject.value.status === 'idle') return;
+
+        this.stopRequested = true;
+        this.setStatus('canceled');
+
+        // invoke('cancel_sync').catch((err) => debug(`SyncService.cancel: cancel_sync invoke failed err=${err}`));
     }
 
     public checkAndSyncPlaylists(
@@ -80,7 +121,7 @@ export class SyncService {
         playlistConcurrency = 2,
         syncIfMissingInCache = true
     ): Observable<void> {
-        if (this.progressSubject.value.status !== 'idle') {
+        if (this.progressSubject.value.status === 'running') {
             return EMPTY;
         }
 
@@ -137,7 +178,6 @@ export class SyncService {
         );
     }
 
-
     public syncPlaylists(
         playlists: Map<string, string>,
         directory: string,
@@ -151,8 +191,8 @@ export class SyncService {
         const entries = Array.from(playlists.entries());
         const startedAt = Date.now();
 
+        this.setStatus('running');
         this.update({
-            status: 'running',
             total: 0,
             processed: 0,
             downloaded: 0,
@@ -201,15 +241,24 @@ export class SyncService {
             }, playlistConcurrency),
             toArray(),
             switchMap(all => {
-                const flat = all.flatMap(x => x.tracks.map(t => ({ t, playlistTitle: x.playlistTitle })));
+                const flat = all.flatMap(x => x.tracks.map(track => ({ track, playlistTitle: x.playlistTitle })));
                 this.update({ total: flat.length });
 
                 return from(flat).pipe(
                     mergeMap(
-                        ({ t, playlistTitle }) =>
-                            this.syncOneTrack(t, playlistTitle, directory).pipe(
-                                tap(res => this.onTrackResult(res, startedAt))
-                            ),
+                        ({ track, playlistTitle }) => {
+                            if (this.stopRequested) {
+                                debug(`SyncService.syncPlaylists: skipping track ${track.id} due to stopRequested`);
+                                return of({ action: 'skipped', path: '', reason: 'canceled' } as SyncTrackResponse);
+                            }
+
+                            this.taskStarted();
+
+                            return this.syncOneTrack(track, playlistTitle, directory).pipe(
+                                tap(res => this.onTrackResult(res, startedAt)),
+                                finalize(() => this.taskFinished())
+                            );
+                        },
                         tracksConcurrency
                     ),
                     map(() => void 0)
@@ -217,15 +266,19 @@ export class SyncService {
             }),
             finalize(() => {
                 const cur = this.progressSubject.value;
-                const status: SyncStatus =
-                    cur.status === 'canceled'
+                const finalStatus: SyncStatus =
+                    this.stopRequested
                         ? 'canceled'
                         : cur.status === 'error'
                             ? 'error'
                             : 'done';
 
+                this.setStatus(finalStatus);
+
+                this.activeCount = 0;
+                this.stopRequested = false;
+
                 this.update({
-                    status,
                     elapsedMs: Date.now() - startedAt,
                     rate: this.computeRate(startedAt),
                     etaMs: 0,
@@ -234,7 +287,7 @@ export class SyncService {
             catchError(err => {
                 console.error('syncPlaylists fatal error', err);
                 error(`SyncService.syncPlaylists: syncPlaylists fatal error err=${err?.message ?? err}`);
-                this.update({ status: 'error' });
+                this.setStatus('error');
                 return throwError(() => err);
             })
         );

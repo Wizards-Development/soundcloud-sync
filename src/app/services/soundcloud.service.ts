@@ -206,7 +206,7 @@ export class SoundCloudService {
 
                 this.playlists.set(devPlaylists);
 
-                (this as any).loadMyPlaylists = (withTrack: boolean) => {
+                (this as any).loadAllMyPlaylists = (withTrack: boolean) => {
                     this.playlists.set(devPlaylists);
                     return;
                 };
