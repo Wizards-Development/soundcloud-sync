@@ -64,6 +64,7 @@ export interface SoundCloudPlaylist {
   track_count?: number;
   embeddable_by?: string | null;
   [key: string]: any;
+  fromLikes?: boolean;
 }
 
 export interface Stream {

@@ -104,10 +104,21 @@
                     (error)="onPlaylistImgError($event)" />
 
                 <div class="meta">
-                    <div class="title" [title]="playlist.title">{{ playlist.title }}</div>
+                    <div class="title-row">
+                        <div class="title" [title]="playlist.title">
+                            {{ playlist.title }}
+                        </div>
+
+                        @if (playlist.fromLikes) {
+                        <i class="pi pi-heart liked-icon">
+                        </i>
+                        }
+                    </div>
                     <div class="status">
                         <i class="pi" [ngClass]="isSynced(playlist.id) ? 'pi-check' : 'pi-circle'"></i>
-                        <span>{{ isSynced(playlist.id) ? 'Synchronisée' : 'Non synchronisée' }}</span>
+                        <span>
+                            {{ isSynced(playlist.id) ? 'Synchronisée' : 'Non synchronisée' }}
+                        </span>
                     </div>
                 </div>
             </button>

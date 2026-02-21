@@ -65,8 +65,14 @@ export class SoundCloudService {
             next: ({ myPlaylists, likedPlaylists }) => {
 
                 const merged = [
-                    ...(myPlaylists ?? []),
-                    ...(likedPlaylists ?? [])
+                    ...(myPlaylists ?? []).map(p => ({
+                        ...p,
+                        fromLikes: false
+                    })),
+                    ...(likedPlaylists ?? []).map(p => ({
+                        ...p,
+                        fromLikes: true
+                    }))
                 ];
 
                 this.playlists.set(merged);

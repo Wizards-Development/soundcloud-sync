@@ -128,6 +128,24 @@
                 &.synced {
                     background: color-mix(in srgb, var(--p-primary-color) 15%, transparent);
                 }
+
+                .meta {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 4px;
+                }
+
+                .title-row {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: 8px;
+                }
+
+                .liked-icon {
+                    color: #e0245e;
+                    font-size: 0.9rem;
+                }
             }
 
             .artwork {
